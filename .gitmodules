@@ -1,0 +1,3 @@
+[submodule "third_party/InstantMesh"]
+	path = third_party/InstantMesh
+	url = git@github.com:TencentARC/InstantMesh.git

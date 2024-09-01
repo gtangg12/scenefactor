@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scenefactor"
+version = "0.0.1"
+description = "Efficient Scene Factorization with 2D and 3D Priors"
+readme = "README.md"
+requires-python = ">=3.12.0"
+classifiers = [
+    "Programming Language :: Python",
+]
+dependencies = [
+    "matplotlib",
+    "natsort",
+    "numpy==1.26.4",
+    "omegaconf",
+    "opencv-python",
+    "torch==2.4.0",
+    "torchvision==0.19.0",
+    "torchtyping",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+
+[project.scripts]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["scenefactor*"]

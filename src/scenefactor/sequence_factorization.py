@@ -35,9 +35,8 @@ class SequenceObjectExtraction:
         """
         # get labels from sequence metadata
         # for label in labels (labels that need to be extracted)
-        # determine if each label is a good view using sequence
-        # specifically ask GPT what objects are in scene are uncluttered and have full, front view for each frame
-        # for each good view, select frame with highest score, ties broken randomly
+        # determine if each label is a good view using sequence by looking at holes in instance mask
+        # for each good view, select frame with highest score, and ensure everything is above threshold (try with clip, or grounding dino)
         # image to 3d model for all good views
         # return dict mapping label to mesh
         pass
