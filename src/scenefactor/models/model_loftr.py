@@ -4,21 +4,24 @@ import matplotlib.pyplot as plt
 import torch
 from kornia.feature import LoFTR
 from kornia_moons.viz import draw_LAF_matches
+from omegaconf import OmegaConf
 from PIL import Image
 
 from scenefactor.data.common import NumpyTensor
 
 
-class LoFTRModel:
+class ModelLoFTR:
     """
     """
     RESIZE = (600, 375)
 
-    def __init__(self, config):
+    def __init__(self, config: OmegaConf, device='cuda'):
         """
         """
         self.config = config
+        self.device = device
         self.matcher = LoFTR(pretrained='indoor')
+        self.matcher.to(self.device)
 
     def __call__(
         self, 

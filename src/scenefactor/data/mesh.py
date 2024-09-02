@@ -5,7 +5,7 @@ import trimesh
 from trimesh.base import Trimesh, Scene
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.utils.geom import *
+from scenefactor.utils.geom import homogeneous_transform, homogeneous_transform_handle_small, bounding_box_centroid
 
 
 def scene2mesh(scene: Scene, process=True) -> Trimesh:

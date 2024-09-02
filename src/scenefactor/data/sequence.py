@@ -31,11 +31,13 @@ class FrameSequence:
 
     def __getitem__(self, index: int):
         """
+        Returns view of FrameSequence object at index.
         """
         return FrameSequence(**{k: tensor[index] for k, tensor in asdict(self).items()})
 
     def __slice__(self, index1: int, index2: int):
         """
+        Returns view slice of FrameSequence object from index1 to index2.
         """
         return FrameSequence(**{k: tensor[index1:index2] for k, tensor in asdict(self).items()})
     

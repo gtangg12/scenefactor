@@ -41,3 +41,39 @@ def bounding_box_centroid(coords: NumpyTensor['n 3']) -> NumpyTensor['3']:
     Compute bounding box centroid from coordinates.
     """
     return bounding_box(coords).mean(axis=0)
+
+
+def bmask_sample_points(bmask: NumpyTensor['h', 'w'], num_samples: int) -> NumpyTensor['n 2']:
+    """
+    Sample points from binary mask.
+    """
+    indices = np.where(bmask)
+    indices = np.array(indices).T
+    indices = indices[np.random.choice(len(indices), num_samples, replace=False)]
+    return indices
+
+
+def bmask_iou(bmask1: NumpyTensor['h', 'w'], bmask2: NumpyTensor['h', 'w']) -> float:
+    """
+    Compute intersection over union of binary masks.
+    """
+    return np.sum(bmask1 & bmask2) / np.sum(bmask1 | bmask2)
+
+
+def combine_bmasks(masks: NumpyTensor['n h w'], sort=False) -> NumpyTensor['h w']:
+    """
+    """
+    mask_combined = np.zeros_like(masks[0], dtype=int)
+    if sort:
+        masks = sorted(masks, key=lambda x: x.sum(), reverse=True)
+    for i, mask in enumerate(masks):
+        mask_combined[mask] = i + 1
+    return mask_combined
+
+
+def decompose_mask(mask: NumpyTensor['h w'], background=0) -> NumpyTensor['n h w']:
+    """
+    """
+    labels = np.unique(mask)
+    labels = labels[labels != background]
+    return mask == labels[:, None, None]
