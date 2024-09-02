@@ -8,20 +8,6 @@ from src.scenefactor.data.sequence import FrameSequence
 from scenefactor.models import ImageTo3DModel, ModelStableDiffusion
 
 
-class SequenceSegmentation:
-    """
-    """
-    def __init__(self, config: OmegaConf, sequence: FrameSequence):
-        """
-        """
-        pass
-
-    def __call__(self):
-        """
-        """
-        pass
-
-
 class SequenceObjectExtraction:
     """
     """
