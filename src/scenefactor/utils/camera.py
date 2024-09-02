@@ -1,14 +1,7 @@
 import numpy as np
 
 from scenefactor.data.common import NumpyTensor
-
-
-def normalize(x, p=2, dim=0, eps=1e-12):
-    """
-    Equivalent to torch.nn.functional.normalize.
-    """
-    norm = np.linalg.norm(x, ord=p, axis=dim, keepdims=True)
-    return x / (norm + eps)
+from scenefactor.utils.geom import normalize
 
 
 def matrix3x4_to_4x4(matrix3x4: NumpyTensor[4, 4]) -> NumpyTensor[4, 4]:

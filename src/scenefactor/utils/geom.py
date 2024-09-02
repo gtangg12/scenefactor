@@ -3,6 +3,14 @@ import numpy as np
 from scenefactor.data.common import NumpyTensor
 
 
+def normalize(x, p=2, dim=0, eps=1e-12):
+    """
+    Equivalent to torch.nn.functional.normalize.
+    """
+    norm = np.linalg.norm(x, ord=p, axis=dim, keepdims=True)
+    return x / (norm + eps)
+
+
 def homogeneous_transform(transform: NumpyTensor['4 4'], coords: NumpyTensor['n 3']) -> NumpyTensor['n 3']:
     """
     Apply homogeneous transformation to coordinates.
