@@ -18,6 +18,7 @@ class ModelStableDiffusion:
     def __init__(self, config: OmegaConf, device='cuda'):
         """
         """
+        self.config = config
         self.pipeline = AutoPipelineForInpainting.from_pretrained(config.checkpoint, torch_dtype=torch.float16)
         self.pipeline = self.pipeline.to(self.device)
     
@@ -43,4 +44,19 @@ class ModelStableDiffusion:
     
 
 if __name__ == '__main__':
-    pass
+    from diffusers.utils import load_image
+
+    image_url = 'https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png'
+    bmask_url = 'https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png'
+    image = load_image(image_url).numpy()
+    bmask = load_image(bmask_url).numpy()
+    print(image.shape, bmask.shape)
+    prompt = 'Face of a yellow cat, high resolution, sitting on a park bench'
+
+    model = ModelStableDiffusion(OmegaConf.create({'checkpoint': 'benjamin-paine/stable-diffusion-v1-5-inpainting'}))
+    image_inpainted = model(prompt, image, bmask)[0]
+    print(image_inpainted.shape)
+
+    PIL.fromarray(image).save('image.png')
+    PIL.fromarray(bmask).save('bmask.png')
+    PIL.fromarray(image_inpainted).save('image_inpainted.png')
