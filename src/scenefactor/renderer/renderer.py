@@ -21,7 +21,7 @@ class Renderer:
         self.config = config
         self.renderer = pyrender.OffscreenRenderer(*config.target_dim)
         self.shaders = {
-            'default': (DefaultShaderCache(), None),
+            'default': (DefaultShaderCache(), self.postprocess_shader_default),
         }
 
     def set_object(self, tmesh: Trimesh):
@@ -54,10 +54,18 @@ class Renderer:
         
         self.scene.set_pose(self.camera_node, pose)
         outputs = {}
-        for name, (shader, postprocess) in shaders.items():
-            outputs[name] = rasterize(shader, postprocess)
+        for _, (shader, postprocess) in shaders.items():
+            outputs.update(**rasterize(shader, postprocess))
         return outputs
     
+    def postprocess_shader_default(
+        image: NumpyTensor['h', 'w', 3],
+        depth: NumpyTensor['h', 'w']
+    ) -> dict:
+        """
+        """
+        return {'image': image, 'depth': depth}        
+
 
 if __name__ == '__main__':
     pass
