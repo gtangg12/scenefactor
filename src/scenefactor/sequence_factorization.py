@@ -8,21 +8,22 @@ from src.scenefactor.data.sequence import FrameSequence
 from scenefactor.models import ImageTo3DModel, ModelStableDiffusion
 
 
-class SequenceObjectExtraction:
+class SequenceExtraction:
     """
     """
     def __init__(self, config: OmegaConf):
         """
         """
-        pass
+        self.config = config
     
     def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
         """
         """
-        # get labels from sequence metadata
-        # for label in labels (labels that need to be extracted)
-        # determine if each label is a good view using sequence by looking at holes in instance mask
-        # for each good view, select frame with highest score, and ensure everything is above threshold (try with clip, or grounding dino)
+        imask_labels = np.unique(sequence.imask)
+        for label in imask_labels:
+            pass
+            # determine if each label is a good view using sequence by looking at holes in instance mask
+            # for each good view, select frame with highest score, and ensure everything is above threshold (try with clip, or grounding dino)
         # image to 3d model for all good views
         # return dict mapping label to mesh
         pass
@@ -34,7 +35,7 @@ class SequenceInpainting:
     def __init__(self, config: OmegaConf):
         """
         """
-        pass
+        self.config = config
 
     def __call__(self, sequence: FrameSequence, labels: set[int]) -> FrameSequence:
         """
@@ -54,7 +55,9 @@ class SequenceFactorization:
     def __init__(self, config: OmegaConf):
         """
         """
-        pass
+        self.config = config
+        self.extractor = SequenceExtraction(config.extractor)
+        self.inpainter = SequenceInpainting(config.inpaintor)
 
     def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
         """
@@ -62,8 +65,27 @@ class SequenceFactorization:
         sequence = sequence.clone()
         sequence.metadata['labels'] = set(np.unique(sequence.imask))
         meshes_total = {}
-        while True: # either use num iters or until all labels used
-            meshes = self.sequence_object_extraction(sequence)
-            sequence = self.sequence_inpainting(sequence, meshes.keys())
+        while True: # either use num iters or until no more new labels extracted
+            meshes = self.extractor(sequence)
+            sequence = self.inpainter(sequence, meshes.keys())
             meshes_total.update(meshes)
         return meshes_total
+    
+
+'''
+Ideas for metrics:
+
+replica (scannet?): look at semantics and get for each scene all the non background objects
+    proportion of non background objects extracted to all non background objects
+    proportion of background objects extracted to all background objects
+    ratio of non background objects to background objects extracted
+
+clip scores of rendered objects vs their gt objects vs images to measure extraction quality
+
+pose errors in registration process
+
+qualitative results of meshes
+qualitative results of inpainting
+qualitative results of editing/removal in context of whole scene
+'''
+    

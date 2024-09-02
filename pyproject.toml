@@ -12,6 +12,7 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dependencies = [
+    "kornia",
     "matplotlib",
     "natsort",
     "numpy==1.26.4",

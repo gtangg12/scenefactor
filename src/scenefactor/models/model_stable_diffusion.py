@@ -33,7 +33,9 @@ class ModelStableDiffusion:
             outputs.append(image_inpainted)
         return np.stack(outputs)
     
-    def process(self, prompt: str, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w']) -> NumpyTensor['h', 'w', 3]:
+    def process(
+        self, prompt: str, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w']
+    ) -> NumpyTensor['h', 'w', 3]:
         """
         """
         image = PIL.Image.fromarray(image).resize(self.RESIZE)
