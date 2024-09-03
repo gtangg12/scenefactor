@@ -24,12 +24,17 @@ class Renderer:
             'default': (DefaultShaderCache(), self.postprocess_shader_default),
         }
 
-    def set_object(self, tmesh: Trimesh):
+    def set_scene(self, scene: pyrender.Scene):
         """
         """
-        self.tmesh = tmesh
-        self.scene = pyrender.Scene(ambient_light=[1.0, 1.0, 1.0])
-        self.scene.add(pyrender.Mesh.from_trimesh(tmesh))
+        self.scene = scene
+
+    def set_tmesh(self, tmesh: Trimesh, ambient_light=[1.0, 1.0, 1.0]):
+        """
+        """
+        scene = pyrender.Scene(ambient_light=ambient_light)
+        scene.add(pyrender.Mesh.from_trimesh(tmesh))
+        self.set_scene(scene)
 
     def set_camera(self, camera_params: dict = None):
         """

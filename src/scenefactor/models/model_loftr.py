@@ -26,8 +26,7 @@ class ModelLoFTR:
     def __call__(
         self, 
         images1: NumpyTensor['n', 'h', 'w', 3], 
-        images2: NumpyTensor['n', 'h', 'w', 3],
-        confidence_threshold: float = 0.9,
+        images2: NumpyTensor['n', 'h', 'w', 3], confidence_threshold: float = 0.9,
     ) -> list[dict]:
         """
         """
@@ -46,19 +45,32 @@ class ModelLoFTR:
             outputs[k] = tensor[outputs_matcher['confidence'] > confidence_threshold].cpu().numpy()
         return outputs
     
+    def process(
+        self, 
+        image1: NumpyTensor['h', 'w', 3], 
+        image2: NumpyTensor['h', 'w', 3], confidence_threshold: float = 0.9
+    ) -> dict:
+        """
+        """
+        return self(
+            image1[None, ...],
+            image2[None, ...], 
+            confidence_threshold=confidence_threshold
+        )
+    
 
-def fundamental_matrix(keypoints1: NumpyTensor['n', 2], keypoints2: NumpyTensor['n', 2]):
+def fundamental_matrix(keypoints0: NumpyTensor['n', 2], keypoints1: NumpyTensor['n', 2]):
     """
     """
-    Fmat, inliers = cv2.findFundamentalMat(keypoints1, keypoints2, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+    Fmat, inliers = cv2.findFundamentalMat(keypoints0, keypoints1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
     return Fmat, inliers > 0
 
 
 def visualize_matches(
     image1: NumpyTensor['h', 'w', 3], 
     image2: NumpyTensor['h', 'w', 3], 
+    keypoints0: NumpyTensor['n', 2],
     keypoints1: NumpyTensor['n', 2],
-    keypoints2: NumpyTensor['n', 2],
     inliers: NumpyTensor['h', 'w'], inlier_color=(0.2, 1, 0.2), feature_color=(0.2, 0.5, 1)
 ) -> Image.Image:
     """
@@ -68,16 +80,16 @@ def visualize_matches(
 
     draw_LAF_matches(
         kornia.feature.laf_from_center_scale_ori(
+            torch.from_numpy(keypoints0)   .view(1, -1,  2),
+            torch.ones(keypoints0.shape[0]).view(1, -1,  1,  1),
+            torch.ones(keypoints0.shape[0]).view(1, -1,  1),
+        ),
+        kornia.feature.laf_from_center_scale_ori(
             torch.from_numpy(keypoints1)   .view(1, -1,  2),
             torch.ones(keypoints1.shape[0]).view(1, -1,  1,  1),
             torch.ones(keypoints1.shape[0]).view(1, -1,  1),
         ),
-        kornia.feature.laf_from_center_scale_ori(
-            torch.from_numpy(keypoints2)   .view(1, -1,  2),
-            torch.ones(keypoints2.shape[0]).view(1, -1,  1,  1),
-            torch.ones(keypoints2.shape[0]).view(1, -1,  1),
-        ),
-        torch.arange(keypoints1.shape[0]).view(-1, 1).repeat(1, 2),
+        torch.arange(keypoints0.shape[0]).view(-1, 1).repeat(1, 2),
         kornia.tensor_to_image(image1),
         kornia.tensor_to_image(image2),
         inliers,

@@ -18,7 +18,7 @@ class FrameSequenceReader(ABC):
     READER_CONFIG = None
 
     @abstractmethod
-    def read(self, filename: Path | str) -> FrameSequence:
+    def read(self, filename: Path | str, slice=(0, -1, 1)) -> FrameSequence:
         """
         """
         pass
@@ -75,7 +75,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
     """
     READER_CONFIG = '../../../configs/reader_replica_vmap.yaml'
 
-    def read(self, filename: Path | str, track='00') -> FrameSequence:
+    def read(self, filename: Path | str, track='00', slice=(0, -1, 1)) -> FrameSequence:
         """
         """
         assert track in ['00', '01']
@@ -90,7 +90,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         poses = np.loadtxt(self.datadir / f'imap/{track}/traj_w_c.txt', delimiter=' ').reshape(-1, 4, 4)
         poses = poses @ np.array(metadata['pose_axis_transform'])
         
-        return FrameSequence(
+        sequence = FrameSequence(
             poses=poses,
             images=np.array([self.load_image(f) for f in image_filenames]),
             depths=np.array([self.load_depth(f, scale=metadata['depth_scale']) for f in depth_filenames]),
@@ -98,6 +98,8 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
             imasks=np.array([self.load_imask(f) for f in imask_filenames]),
             metadata=metadata
         )
+        sequence = sequence[slice[0]:slice[1]:slice[2]]
+        return sequence
     
 
 if __name__ == '__main__':

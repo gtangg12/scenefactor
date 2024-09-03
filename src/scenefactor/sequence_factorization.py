@@ -6,7 +6,7 @@ from trimesh.base import Trimesh
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence
-from scenefactor.models import ModelInstantMesh, ModelStableDiffusion
+from scenefactor.models import ModelInstantMesh, ModelStableDiffusion, ModelSAM2
 from scenefactor.utils.geom import bmask_iou
 
 
@@ -139,6 +139,10 @@ class SequenceFactorization:
             sequence = self.inpainter(sequence, meshes.keys())
             meshes_total.update(meshes)
         return meshes_total
+
+
+if __name__ == '__main__':
+    pass
 
 
 '''

@@ -107,7 +107,7 @@ def swirl(n=120, cycles=1, elevation_range=(-45, 60)):
 
 def sample_view_matrices(
     n: int, radius: float, lookat_position: NumpyTensor['3']=np.tensor([0, 0, 0])
-) -> NumpyTensor[4, 4]:
+) -> NumpyTensor['n', 4, 4]:
     """
     Sample n uniformly distributed view matrices spherically with given radius.
     """
@@ -127,7 +127,7 @@ def sample_view_matrices(
 
 def sample_view_matrices_method(
     method: str, radius: float, lookat_position: NumpyTensor['3']=np.tensor([0, 0, 0]), **kwargs
-) -> NumpyTensor[4, 4]:
+) -> NumpyTensor['n', 4, 4]:
     """
     Sample view matrices according to a method with given radius.
     """
