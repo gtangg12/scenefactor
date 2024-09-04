@@ -5,11 +5,16 @@ import numpy as np
 from omegaconf import OmegaConf
 from trimesh.base import Trimesh
 from pyrender.shader_program import ShaderProgramCache as DefaultShaderCache
+from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
+from scenefactor.utils.colormaps import colormap_depth
 
 
 DEFAULT_CAMERA_PARAMS = {'fov': 60, 'znear': 0.01, 'zfar': 16}
+
+
+RenderObject = Trimesh | pyrender.Scene
 
 
 class Renderer:
@@ -24,17 +29,17 @@ class Renderer:
             'default': (DefaultShaderCache(), self.postprocess_shader_default),
         }
 
-    def set_scene(self, scene: pyrender.Scene):
+    def set_object(self, source: RenderObject, ambient_light=[1.0, 1.0, 1.0]):
         """
         """
-        self.scene = scene
-
-    def set_tmesh(self, tmesh: Trimesh, ambient_light=[1.0, 1.0, 1.0]):
-        """
-        """
-        scene = pyrender.Scene(ambient_light=ambient_light)
-        scene.add(pyrender.Mesh.from_trimesh(tmesh))
-        self.set_scene(scene)
+        if isinstance(source, pyrender.Scene):
+            self.scene = source
+        elif isinstance(source, Trimesh):
+            scene = pyrender.Scene(ambient_light=ambient_light)
+            scene.add(pyrender.Mesh.from_trimesh(source))
+            self.scene = scene
+        else:
+            raise ValueError('Invalid source type. Must be either Trimesh or pyrender.Scene')
 
     def set_camera(self, camera_params: dict = None):
         """
@@ -48,29 +53,58 @@ class Renderer:
     def render(self, pose: NumpyTensor['4 4'], shaders=['default']) -> dict:
         """
         """
-        def rasterize(shader: str, postprocess: callable = None):
+        def rasterize(shader_name: str):
             """
             """
-            self.renderer._renderer._program_cache = self.shaders[shader]
+            self.renderer._renderer._program_cache, postprocess_func = self.shaders[shader_name]
             output = self.renderer.render(self.scene)
-            if postprocess is not None:
-                output = postprocess(output)
+            output = postprocess_func(*output)
             return output
         
         self.scene.set_pose(self.camera_node, pose)
         outputs = {}
-        for _, (shader, postprocess) in shaders.items():
-            outputs.update(**rasterize(shader, postprocess))
+        for shader_name in shaders:
+            outputs.update(**rasterize(shader_name))
         return outputs
     
     def postprocess_shader_default(
+        self,
         image: NumpyTensor['h', 'w', 3],
         depth: NumpyTensor['h', 'w']
     ) -> dict:
         """
         """
-        return {'image': image, 'depth': depth}        
+        return {'image': image, 'depth': depth}
+
+
+def render_multiview(
+    source: RenderObject, renderer: Renderer, poses: NumpyTensor['n', '4', '4'], shaders=['default'], camera_params=None
+) -> list[NumpyTensor['h', 'w', 3]]:
+    """
+    """
+    renderer.set_object(source)
+    renderer.set_camera(camera_params)
+    outputs = []
+    for pose in tqdm(poses, desc='Rendering views...'):
+        outputs.append(renderer.render(pose, shaders))
+    return outputs
 
 
 if __name__ == '__main__':
-    pass
+    import os
+    from PIL import Image
+    from scenefactor.data.mesh import read_mesh
+    from scenefactor.utils.camera_generation import sample_view_matrices_method
+
+    mesh     = read_mesh('tests/instant_mesh.obj', norm=True)
+    cameras  = sample_view_matrices_method('cube', radius=1.5)
+    renderer = Renderer(OmegaConf.create({'target_dim': (640, 480)}))
+    outputs  = render_multiview(mesh, renderer, cameras)
+    
+    path = 'tests/renderer'
+    os.makedirs(path, exist_ok=True)
+    for i, renders in enumerate(outputs):
+        image = Image.fromarray(renders['image'])
+        depth = colormap_depth(renders['depth'])
+        image.save(f'{path}/image_{i}.png')
+        depth.save(f'{path}/depth_{i}.png')

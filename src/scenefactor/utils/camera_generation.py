@@ -106,7 +106,7 @@ def swirl(n=120, cycles=1, elevation_range=(-45, 60)):
 
 
 def sample_view_matrices(
-    n: int, radius: float, lookat_position: NumpyTensor['3']=np.tensor([0, 0, 0])
+    n: int, radius: float, lookat_position: NumpyTensor['3']=np.array([0, 0, 0])
 ) -> NumpyTensor['n', 4, 4]:
     """
     Sample n uniformly distributed view matrices spherically with given radius.
@@ -119,23 +119,19 @@ def sample_view_matrices(
     camera_position = np.stack([world_x, world_y, world_z], dim=-1)
     lookat_position = lookat_position.unsqueeze(0).repeat(n, 1)
     return view_matrix(
-        camera_position.to(lookat_position.device),
-        lookat_position,
-        up=np.array([0, 1, 0], device=lookat_position.device)
+        camera_position, lookat_position, up=np.array([0, 1, 0])
     )
 
 
 def sample_view_matrices_method(
-    method: str, radius: float, lookat_position: NumpyTensor['3']=np.tensor([0, 0, 0]), **kwargs
+    method: str, radius: float, lookat_position: NumpyTensor['3']=np.array([0, 0, 0]), **kwargs
 ) -> NumpyTensor['n', 4, 4]:
     """
     Sample view matrices according to a method with given radius.
     """
     camera_position = eval(method)(**kwargs) * radius
     return view_matrix(
-        camera_position.to(lookat_position.device) + lookat_position,
-        lookat_position,
-        up=np.array([0, 1, 0], device=lookat_position.device)
+        camera_position, lookat_position, up=np.array([0, 1, 0])
     )
 
 
