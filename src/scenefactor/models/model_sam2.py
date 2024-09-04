@@ -85,18 +85,16 @@ class ModelSAM2():
         self.engine = {
             'pred': SAM2ImagePredictor,
             'auto': SAM2AutomaticMaskGenerator,
-        }[self.config.mode](self.sam_model, **self.config.sam.get('engine_config', {}))
+        }[self.config.mode](self.model, **self.config.get('engine_config', {}))
     
     
-    def __call__(self, image: Image, prompt: dict = None) -> NumpyTensor['n h w']:
+    def __call__(self, image: NumpyTensor['h', 'w', 3], prompt: dict = None) -> NumpyTensor['n', 'h', 'w']:
         """
         For information on prompt format see:
         
         https://github.com/facebookresearch/segment-anything/blob/main/segment_anything/predictor.py#L104
         """
-        assert self.config.mode == ('pred' if 'mask' in prompt else 'auto')
-            
-        image = np.array(image)
+        assert self.config.mode == ('auto' if prompt is None else 'pred')
 
         if self.config.mode == 'auto':
             annotations = self.engine.generate(image)
@@ -111,4 +109,12 @@ class ModelSAM2():
 
 
 if __name__ == '__main__':
-    pass
+    model = ModelSAM2(OmegaConf.create({
+        'checkpoint': 'checkpoints/sam2_hiera_large.pt', 
+        'model_config': 'sam2_hiera_l.yaml',
+        'mode': 'auto'
+    }))
+    image = np.asarray(Image.open('tests/test.png').convert('RGB'))
+    masks = model(image)
+    print(masks.shape)
+    colormap_bmasks(masks, image).save('tests/sam2_cmask.png')

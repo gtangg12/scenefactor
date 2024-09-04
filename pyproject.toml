@@ -13,6 +13,7 @@ classifiers = [
 ]
 dependencies = [
     "kornia",
+    "kornia_moons",
     "matplotlib",
     "natsort",
     "numpy==1.26.4",

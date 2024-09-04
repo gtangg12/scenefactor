@@ -1,3 +1,6 @@
 [submodule "third_party/InstantMesh"]
 	path = third_party/InstantMesh
 	url = git@github.com:TencentARC/InstantMesh.git
+[submodule "third_party/segment-anything-2"]
+	path = third_party/segment-anything-2
+	url = git@github.com:facebookresearch/segment-anything-2.git

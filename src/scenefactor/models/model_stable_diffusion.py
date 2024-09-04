@@ -1,11 +1,10 @@
 import PIL
-import PIL.Image
 import numpy as np
 import torch
-import torch.nn as nn
+from PIL import Image
 from omegaconf import OmegaConf
 from diffusers import AutoPipelineForInpainting
-from diffusers.utils import load_image, make_image_grid
+from diffusers.utils import load_image
 
 from scenefactor.data.common import NumpyTensor
 
@@ -19,23 +18,11 @@ class ModelStableDiffusion:
         """
         """
         self.config = config
+        self.device = device
         self.pipeline = AutoPipelineForInpainting.from_pretrained(config.checkpoint, torch_dtype=torch.float16)
-        self.pipeline = self.pipeline.to(self.device)
+        self.pipeline = self.pipeline.to(device)
     
-    def __call__(
-        self, prompt: str, image: NumpyTensor['n', 'h', 'w', 3], bmask: NumpyTensor['n', 'h', 'w']
-    ) -> NumpyTensor['n', 'h', 'w', 3]:
-        """
-        """
-        outputs = []
-        for i in range(len(image)):
-            image_inpainted = self.process(prompt, image[i], bmask[i])
-            outputs.append(image_inpainted)
-        return np.stack(outputs)
-    
-    def process(
-        self, prompt: str, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w']
-    ) -> NumpyTensor['h', 'w', 3]:
+    def __call__(self, prompt: str, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w']) -> NumpyTensor['h', 'w', 3]:
         """
         """
         image = PIL.Image.fromarray(image).resize(self.RESIZE)
@@ -50,15 +37,14 @@ if __name__ == '__main__':
 
     image_url = 'https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png'
     bmask_url = 'https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png'
-    image = load_image(image_url).numpy()
-    bmask = load_image(bmask_url).numpy()
-    print(image.shape, bmask.shape)
+    image = np.asarray(load_image(image_url))
+    bmask = np.asarray(load_image(bmask_url).convert('L'))
     prompt = 'Face of a yellow cat, high resolution, sitting on a park bench'
 
     model = ModelStableDiffusion(OmegaConf.create({'checkpoint': 'benjamin-paine/stable-diffusion-v1-5-inpainting'}))
-    image_inpainted = model(prompt, image, bmask)[0]
+    image_inpainted = model(prompt, image, bmask)
     print(image_inpainted.shape)
 
-    PIL.fromarray(image).save('image.png')
-    PIL.fromarray(bmask).save('bmask.png')
-    PIL.fromarray(image_inpainted).save('image_inpainted.png')
+    Image.fromarray(image).save('tests/stable_diffusion_image.png')
+    Image.fromarray(bmask).save('tests/stable_diffusion_bmask.png')
+    Image.fromarray(image_inpainted).save('tests/stable_diffusion_image_inpainted.png')
