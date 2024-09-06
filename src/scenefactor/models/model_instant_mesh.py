@@ -40,7 +40,7 @@ if __name__ == '__main__':
         'tmesh_path': 'outputs/instant-mesh-large/meshes/input.obj'
     }))
 
-    image = Image.open('third_party/InstantMesh/examples/chair_wood.jpg')
+    image = Image.open('third_party/InstantMesh/examples/hatsune_miku.png')
     image = np.asarray(image)
     mesh = model(image)
     mesh.export('tests/instant_mesh.obj')

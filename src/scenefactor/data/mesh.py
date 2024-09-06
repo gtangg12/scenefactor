@@ -44,7 +44,7 @@ def norm_mesh(mesh: Trimesh) -> Trimesh:
     return mesh
 
 
-def read_mesh(filename: Path, norm=False, process=True) -> Trimesh:
+def read_mesh(filename: Path, norm=False, process=True, transform: NumpyTensor[4, 4]=None) -> Trimesh:
     """
     Read mesh/convert a possible scene to mesh. 
     
@@ -61,4 +61,6 @@ def read_mesh(filename: Path, norm=False, process=True) -> Trimesh:
         mesh = source
     if norm:
         mesh = norm_mesh(mesh)
+    if transform is not None:
+        mesh.vertices = homogeneous_transform(transform, mesh.vertices)
     return mesh

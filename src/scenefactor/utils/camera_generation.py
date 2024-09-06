@@ -105,19 +105,19 @@ def swirl(n=120, cycles=1, elevation_range=(-45, 60)):
     return np.array(coords)
 
 
-def sample_view_matrices(
-    n: int, radius: float, lookat_position: NumpyTensor['3']=np.array([0, 0, 0])
+def sample_view_matrices_spherical(
+    tht: NumpyTensor['n'], 
+    phi: NumpyTensor['n'], 
+    radius: float, lookat_position: NumpyTensor['3']=np.array([0, 0, 0])
 ) -> NumpyTensor['n', 4, 4]:
     """
-    Sample n uniformly distributed view matrices spherically with given radius.
+    Sample view matrices spherically with given radius given azimuthal and elevation angles.
     """
-    tht = np.random.rand(n) * np.pi * 2
-    phi = np.random.rand(n) * np.pi
     world_x = radius * np.sin(phi) * np.cos(tht)
     world_y = radius * np.sin(phi) * np.sin(tht)
     world_z = radius * np.cos(phi)
-    camera_position = np.stack([world_x, world_y, world_z], dim=-1)
-    lookat_position = lookat_position.unsqueeze(0).repeat(n, 1)
+    camera_position = np.stack([world_x, world_y, world_z], axis=-1)
+    lookat_position = np.tile(lookat_position, (len(tht), 1))
     return view_matrix(
         camera_position, lookat_position, up=np.array([0, 1, 0])
     )

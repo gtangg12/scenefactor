@@ -94,12 +94,17 @@ if __name__ == '__main__':
     import os
     from PIL import Image
     from scenefactor.data.mesh import read_mesh
-    from scenefactor.utils.camera_generation import sample_view_matrices_method
+    from scenefactor.utils.camera_generation import sample_view_matrices_method, sample_view_matrices_spherical
 
-    mesh     = read_mesh('tests/instant_mesh.obj', norm=True)
-    cameras  = sample_view_matrices_method('cube', radius=1.5)
+    mesh = read_mesh('tests/instant_mesh.obj', norm=True, transform=np.array([
+        [ 1,  0,  0,  0],
+        [ 0,  0, -1,  0],
+        [ 0,  1,  0,  0],
+        [ 0,  0,  0,  1],
+    ]))
+    poses, camera_params = sample_view_matrices_method('icosahedron', radius=2), None
     renderer = Renderer(OmegaConf.create({'target_dim': (640, 480)}))
-    outputs  = render_multiview(mesh, renderer, cameras)
+    outputs = render_multiview(mesh, renderer, poses, camera_params=camera_params)
     
     path = 'tests/renderer'
     os.makedirs(path, exist_ok=True)
