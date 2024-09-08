@@ -1,7 +1,8 @@
 import copy
 import json
 import os
-from collections import defaultdict
+import pickle
+from collections import defaultdict, Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -25,7 +26,7 @@ class FrameSequence:
     def __len__(self):
         """
         """
-        return len(self.image)
+        return len(self.images)
 
     def __getitem__(self, index: int):
         """
@@ -86,7 +87,7 @@ class FrameSequence:
             output += f"    {tname}: {{'shape': {shape}, 'dtype': {dtype}}}\n"
         output += f"    metadata: {json.dumps(self.metadata, indent=4, separators=(',', ': '))}"
         return output
-    
+
 
 def save_sequence(filename: Path | str, sequence: FrameSequence) -> None:
     """
@@ -98,8 +99,8 @@ def save_sequence(filename: Path | str, sequence: FrameSequence) -> None:
     for k, v in asdict(sequence).items():
         if isinstance(v, np.ndarray):
             np.save(filename / f'{k}.npy', v)
-    with open(filename / 'metadata.json', 'w') as f:
-        json.dump(sequence.metadata, f)
+    with open(filename / 'metadata.pkl', 'wb') as f:
+        pickle.dump(sequence.metadata, f)
 
 
 def load_sequence(filename: Path | str) -> FrameSequence:
@@ -113,6 +114,31 @@ def load_sequence(filename: Path | str) -> FrameSequence:
         if k == 'metadata':
             continue
         setattr(sequence, k, np.load(filename / f'{k}.npy'))
-    with open(filename / 'metadata.json', 'r') as f:
-        sequence.metadata = json.load(f)
+    with open(filename / 'metadata.pkl', 'rb') as f:
+        sequence.metadata = pickle.load(f)
     return sequence
+
+
+def compute_instance2semantic_label_mapping(
+    sequence: FrameSequence,
+    instance_background: int=None,
+    semantic_background: int=None,
+) -> dict[int, int]:
+    """
+    For each instance in the sequence, computes the most common semantic label it is associated with.
+    """
+    assert sequence.imasks is not None and \
+           sequence.smasks is not None
+    
+    instance2semantic = defaultdict(Counter)
+    for imask, smask in zip(sequence.imasks, sequence.smasks):
+        for instance_id in np.unique(imask):
+            if instance_id == instance_background:
+                continue
+            match = smask[imask == instance_id]
+            if semantic_background is not None:
+                match = match[match != semantic_background]
+            instance2semantic[instance_id].update(match)
+    return {
+        k: v.most_common(1)[0][0] for k, v in instance2semantic.items() if len(v)
+    }
