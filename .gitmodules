@@ -4,3 +4,6 @@
 [submodule "third_party/segment-anything-2"]
 	path = third_party/segment-anything-2
 	url = git@github.com:facebookresearch/segment-anything-2.git
+[submodule "third_party/lama"]
+	path = third_party/lama
+	url = https://github.com/advimman/lama.git
