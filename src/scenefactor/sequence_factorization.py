@@ -1,6 +1,10 @@
 import multiprocessing as mp
+import os
 from collections import defaultdict
+from glob import glob
+from pathlib import Path
 
+import cv2
 import numpy as np
 from omegaconf import OmegaConf
 from trimesh.base import Trimesh
@@ -21,12 +25,12 @@ class SequenceExtraction:
         """
         """
         self.config = config
-        self.model = ModelInstantMesh(config.model)
+        self.model = ModelInstantMesh(config.model) # does not consume gpu memory since calls script internally
     
     def __call__(self, sequence: FrameSequence, instance2semantic: dict[int, int]) -> dict[int, Trimesh]:
         """
-        """
-        def compute_bmasks(sequence: FrameSequence) -> dict[int, dict[int, NumpyTensor['h', 'w']]]:
+        """        
+        def compute_bmasks(sequence: FrameSequence):
             """
             """
             bmasks = defaultdict(dict)
@@ -44,8 +48,8 @@ class SequenceExtraction:
                         continue
                     bmasks[label][index] = bmask
             return bmasks
-
-        sequence_bmasks = compute_bmasks(sequence) # label: index: bmasks
+        
+        sequence_bmasks = compute_bmasks(sequence) # label: index: bmask
 
         def compute_bboxes(sequence: FrameSequence) -> list[dict[int, BBox]]:
             """
@@ -55,7 +59,7 @@ class SequenceExtraction:
                 for index, bmask in index2bmask.items():
                     boxes[label][index] = compute_bbox(bmask)
             return boxes
-
+        
         sequence_bboxes = compute_bboxes(sequence) # label: index: bbox
 
         def compute_view_score(label: int, index: int) -> float:
@@ -126,52 +130,71 @@ class SequenceExtraction:
             mesh.export(f'mesh_{label}.obj')
             return mesh
         
+        labels = np.unique(sequence.imasks)
+        import random
+        random.shuffle(labels)
+        labels = [72]
         meshes = {}
-        for label in np.unique(sequence.imasks):
+        for label in labels:
             meshes[label] = process(label)
-        exit()
+            if meshes[label] is not None:
+                return meshes
         return meshes
 
 
 class SequenceInpainting:
     """
     """
-    INPAINT_PROMPT = 'Fill in the missing parts of the image.'
+    INPAINTING_PROMPT = 'Background'
 
     def __init__(self, config: OmegaConf):
         """
         """
         self.config = config
-        self.model_inpainter = ModelStableDiffusion(config.model_inpainter)
-        self.model_segmenter = ModelSAM2           (config.model.segmenter)
 
     def __call__(self, sequence: FrameSequence, labels_to_inpaint: set[int]) -> FrameSequence:
         """
 
         NOTE:: we do not propagate inpainting e.g. using NeRF since image to 3d involves only one frame
         """ 
+        # Not enough memory to load all models at once
+        def call_inpainter(*args, **kwargs):
+            return ModelStableDiffusion(self.config.model_inpainter)(*args, **kwargs)
+        
+        def call_segmenter(*args, **kwargs):
+            return ModelSAM2(self.config.model_segmenter)(*args, **kwargs)
+        
         def predict_label(index: int, bmask: NumpyTensor['h', 'w']) -> int:
             """
             """
-            frame = sequence[index]
-            return np.argmax(np.bincount(frame.imask[bmask]))
+            return np.argmax(np.bincount(sequence.imasks[index][bmask]))
 
-        def inpaint(index: int, label: int):
+        def inpaint(sequence_updated: FrameSequence, index: int, label: int):
             """
             """
-            frame = sequence[index]
-            bmask = frame.imask == label
-            frame.image = self.model_inpainter(self.INPAINT_PROMPT, frame.image, bmask)
-            for bmask_inpainted in self.model_segmenter(frame.image):
-                if bmask_iou(bmask, bmask_inpainted) > self.config.bmask_iou_threshold:
+            bmask = sequence_updated.imasks[index] == label
+            if not np.any(bmask):
+                return
+            bmask = cv2.dilate(bmask.astype(np.uint8), np.ones((5, 5), np.uint8), iterations=1).astype(bool)
+            image = sequence_updated.images[index]
+            colormap_image(image).save(f'image_{index}.png')
+            colormap_bmask(bmask).save(f'bmask_{index}.png')
+            image_updated = call_inpainter(self.INPAINTING_PROMPT, image, bmask)
+            masks = call_segmenter(image_updated) 
+            colormap_image(image_updated).save(f'image_updated_{index}.png')
+            colormap_bmasks(masks).save(f'masks_{index}.png')
+            for bmask_sam in masks:
+                if bmask_iou(bmask, bmask_sam) > self.config.bmask_iou_threshold:
                     # inpainting operates on tensor views of sequence
-                    frame.imask[bmask & bmask_inpainted] = predict_label(index, bmask_inpainted)
+                    sequence_updated.imasks[index][bmask & bmask_sam] = predict_label(index, bmask_sam)
+            sequence_updated.images[index] = image_updated
 
-        sequence = sequence.clone()
+        sequence_updated = sequence.clone()
         for label in labels_to_inpaint:
             for i in range(len(sequence)):
-                inpaint(i, label)
-        return sequence
+                inpaint(sequence_updated, i, label)
+            exit()
+        return sequence_updated
 
 
 class SequenceFactorization:
@@ -190,10 +213,11 @@ class SequenceFactorization:
         instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
 
         sequence = sequence.clone()
-        sequence.metadata['labels'] = set(np.unique(sequence.imask))
         meshes_total = {}
-        while True: # either use num iters or until no more new labels extracted
+        for i in range(self.config.max_iterations):
             meshes = self.extractor(sequence, instance2semantic)
+            if len(meshes) == 0:
+                break
             sequence = self.inpainter(sequence, meshes.keys())
             meshes_total.update(meshes)
         return meshes_total
@@ -202,12 +226,16 @@ class SequenceFactorization:
 if __name__ == '__main__':
     from scenefactor.data.sequence_reader import ReplicaVMapFrameSequenceReader
 
-    reader = ReplicaVMapFrameSequenceReader('/home/gtangg12/data/replica-vmap', 'room_0', save_dir='/home/gtangg12/data/scenefactor/replica-vmap')
+    reader = ReplicaVMapFrameSequenceReader(
+        base_dir='/home/gtangg12/data/replica-vmap', 
+        save_dir='/home/gtangg12/data/scenefactor/replica-vmap', 
+        name='room_0',
+    )
     sequence = reader.read()
 
     instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
 
-    extractor = SequenceExtraction(OmegaConf.create({
+    extractor_config = OmegaConf.create({
         'model': {
             'script_path': 'third_party/InstantMesh/run.py',
             'model_config_path': 'configs/instant-mesh-large.yaml',
@@ -219,9 +247,26 @@ if __name__ == '__main__':
         'score_bbox_min_area': 1024,
         'score_bbox_occupancy_threshold': 0.6,
         'score_bbox_overlap_threshold': 64,
+        'cache_dir': reader.save_dir / 'sequence_factorization_extraction' 
+    })
+    inpainter_config = OmegaConf.create({
+        'model_inpainter': {
+            'checkpoint': 'benjamin-paine/stable-diffusion-v1-5-inpainting'
+        },
+        'model_segmenter': {
+            'checkpoint': 'checkpoints/sam2_hiera_large.pt', 
+            'model_config': 'sam2_hiera_l.yaml',
+            'mode': 'auto'
+        },
+        'bmask_iou_threshold': 0.5,
+        'cache_dir': reader.save_dir / 'sequence_factorization_inpainting'
+    })
+    sequence_factorization = SequenceFactorization(OmegaConf.create({
+        'extractor': extractor_config,
+        'inpaintor': inpainter_config,
+        'max_iterations': 1,
     }))
-    extractor(sequence, instance2semantic)
-    
+    meshes = sequence_factorization(sequence)
 
 
 '''

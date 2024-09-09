@@ -18,12 +18,16 @@ class FrameSequenceReader(ABC):
     """
     READER_CONFIG = None
     
-    def __init__(self, base_dir: Path | str, name: str, save_dir: Path | str = None):
+    def __init__(
+        self, 
+        base_dir: Path | str, 
+        save_dir: Path | str, name: str
+    ):
         """
         """
         self.name = name
-        self.base_dir = Path(base_dir)
-        self.save_dir = Path(save_dir) if save_dir is not None else None
+        self.data_dir = Path(base_dir) / name
+        self.save_dir = Path(save_dir) / name
         self.metadata = self.load_metadata()
 
     def sequence_names(self):
@@ -90,27 +94,37 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
     """
     READER_CONFIG = CONFIGS_DIR / 'sequence_reader_replica_vmap.yaml'
 
-    def read(self, track='00', slice=(0, -1, 20), override=False) -> FrameSequence:
+    def __init__(
+        self, 
+        base_dir: Path | str, 
+        save_dir: Path | str, name: str, track='00'
+    ):
         """
         """
-        assert track in ['00', '01']
+        super().__init__(base_dir, save_dir, name)
 
-        data_dir = self.base_dir / self.name
-        save_dir = self.save_dir / self.name / track if self.save_dir is not None else None
-        if save_dir is not None and save_dir.exists() and not override:
-            return load_sequence(save_dir)
+        assert track in ['00', '01']
+        self.track = track
+        self.data_dir = self.data_dir / 'imap' / track
+        self.save_dir = self.save_dir / track
+
+    def read(self, slice=(0, -1, 20), override=False) -> FrameSequence:
+        """
+        """
+        if self.save_dir.exists() and not override:
+            return load_sequence(self.save_dir)
 
         def read_filenames(pattern: str) -> list[str]:
             """
             """
-            filenames = natsorted(glob(f'{data_dir}/imap/{track}/{pattern}'))
+            filenames = natsorted(glob(f'{self.data_dir}/{pattern}'))
             filenames = filenames[slice[0]:slice[1]:slice[2]]
             return filenames
         
         def read_poses() -> NumpyTensor['n', 4, 4]:
             """
             """
-            poses = np.loadtxt(data_dir / f'imap/{track}/traj_w_c.txt', delimiter=' ')
+            poses = np.loadtxt(self.data_dir / 'traj_w_c.txt', delimiter=' ')
             poses = poses.reshape(-1, 4, 4)
             poses = poses[slice[0]:slice[1]:slice[2]]
             poses = poses @ np.array(self.metadata['pose_axis_transform'])
@@ -119,7 +133,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         def read_semantic_info() -> dict[int, dict]:
             """
             """
-            filename = f'{data_dir}/habitat/info_preseg_semantic.json'
+            filename = f'{self.base_dir}/{self.name}/habitat/info_preseg_semantic.json'
             semantic_info = json.load(open(filename, 'r'))['classes']
             semantic_classes_things = self.metadata.pop('semantic_classes_things')
             return {
@@ -145,8 +159,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
             imasks=np.array([self.load_imask(f) for f in imask_filenames]),
             metadata=self.metadata
         )
-        if save_dir is not None:
-            save_sequence(save_dir, sequence)
+        save_sequence(self.save_dir, sequence)
         return sequence
 
 
