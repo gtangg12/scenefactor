@@ -1,6 +1,10 @@
+import cv2
 import numpy as np
 
 from scenefactor.data.common import NumpyTensor
+
+
+BBox = tuple[int, int, int, int] # TLBR format
 
 
 def normalize(x, p=2, dim=0, eps=1e-12):
@@ -60,20 +64,114 @@ def bmask_iou(bmask1: NumpyTensor['h', 'w'], bmask2: NumpyTensor['h', 'w']) -> f
     return np.sum(bmask1 & bmask2) / np.sum(bmask1 | bmask2)
 
 
-def combine_bmasks(masks: NumpyTensor['n h w'], sort=False) -> NumpyTensor['h w']:
+def combine_bmasks(bmasks: NumpyTensor['n h w'], sort=False) -> NumpyTensor['h w']:
     """
     """
-    mask_combined = np.zeros_like(masks[0], dtype=int)
+    cmask = np.zeros_like(bmasks[0], dtype=int)
     if sort:
-        masks = sorted(masks, key=lambda x: x.sum(), reverse=True)
-    for i, mask in enumerate(masks):
-        mask_combined[mask] = i + 1
-    return mask_combined
+        bmasks = sorted(bmasks, key=lambda x: x.sum(), reverse=True)
+    for i, bmask in enumerate(bmasks):
+        cmask[bmask] = i + 1
+    return cmask
 
 
-def decompose_mask(mask: NumpyTensor['h w'], background=0) -> NumpyTensor['n h w']:
+def decompose_cmask(cmask: NumpyTensor['h w'], background=None) -> NumpyTensor['n h w']:
     """
     """
-    labels = np.unique(mask)
-    labels = labels[labels != background]
-    return mask == labels[:, None, None]
+    labels = np.unique(cmask)
+    np.sort(labels)
+    if background is not None:
+        labels = labels[labels != background]
+    return cmask == labels[:, None, None]
+
+
+def crop(image: NumpyTensor['h', 'w', 'c...'], bbox: BBox) -> NumpyTensor['h', 'w', 'c']:
+    """
+    """
+    return image[bbox[0]:bbox[2], bbox[1]:bbox[3]]
+
+
+def bbox_check_bounds(bbox: BBox, h: int, w: int) -> bool:
+    """
+    """
+    return bbox[0] >= 0 and bbox[2] <= h and \
+           bbox[1] >= 0 and bbox[3] <= w
+
+
+def bbox_area(bbox: BBox) -> int:
+    """
+    """
+    return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+
+def bbox_intersection(bbox1: BBox, bbox2: BBox) -> BBox | None:
+    """
+    """
+    rmin = max(bbox1[0], bbox2[0])
+    cmin = max(bbox1[1], bbox2[1])
+    rmax = min(bbox1[2], bbox2[2])
+    cmax = min(bbox1[3], bbox2[3])
+    if rmin >= rmax or cmin >= cmax:
+        return None
+    return rmin, cmin, rmax, cmax
+
+
+def bbox_union(bbox1: BBox, bbox2: BBox) -> BBox:
+    """
+    """
+    return (
+        min(bbox1[0], bbox2[0]),
+        min(bbox1[1], bbox2[1]),
+        max(bbox1[2], bbox2[2]),
+        max(bbox1[3], bbox2[3])
+    )
+
+
+def bbox_iou(bbox1: BBox, bbox2: BBox) -> float:
+    """
+    """
+    intersection = bbox_intersection(bbox1, bbox2)
+    union        = bbox_union       (bbox1, bbox2)
+    return bbox_area(intersection) / bbox_area(union)
+
+
+def compute_bbox(bmask: NumpyTensor['h', 'w']) -> BBox:
+    """
+    Returns the bounding box of a binary mask, where the minimum is inclusive and the maximum is exclusive.
+    """
+    rows = np.any(bmask, axis=1)
+    cols = np.any(bmask, axis=0)
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+    return rmin, cmin, rmax + 1, cmax + 1
+
+
+def resize_bbox(bbox: BBox, mult: float) -> BBox:
+    """
+    Expands a bounding box by a factor of expand_mult.
+
+    NOTE: does not check if the expanded bbox is within the image bounds.
+    """
+    rmin, cmin, rmax, cmax = bbox
+    rcenter = (rmin + rmax) // 2
+    ccenter = (cmin + cmax) // 2
+    rsize = int((rmax - rmin) * mult)
+    csize = int((cmax - cmin) * mult)
+    rmin, rmax = rcenter - rsize // 2, rcenter + rsize // 2
+    cmin, cmax = ccenter - csize // 2, ccenter + csize // 2
+    return rmin, cmin, rmax, cmax 
+
+
+def remove_artifacts(bmask: NumpyTensor['h', 'w'], mode: str, min_area=128) -> NumpyTensor['h', 'w']:
+    """
+    Removes small islands/fill holes from a mask.
+    """
+    assert mode in ['holes', 'islands']
+    mode_holes = (mode == 'holes')
+    bmask = (mode_holes ^ bmask).astype(np.uint8)
+    nregions, regions, stats, _ = cv2.connectedComponentsWithStats(bmask, 8)
+    sizes = stats[:, -1][1:]  # Row 0 corresponds to 0 pixels
+    fill = [i + 1 for i, s in enumerate(sizes) if s < min_area] + [0]
+    if not mode_holes:
+        fill = [i for i in range(nregions) if i not in fill]
+    return np.isin(regions, fill)

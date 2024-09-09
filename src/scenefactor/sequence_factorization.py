@@ -1,40 +1,17 @@
-import cv2
+import multiprocessing as mp
+from collections import defaultdict
+
 import numpy as np
-import torch
 from omegaconf import OmegaConf
 from trimesh.base import Trimesh
+from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.data.sequence import FrameSequence
+from scenefactor.data.sequence import FrameSequence, compute_instance2semantic_label_mapping
 from scenefactor.models import ModelInstantMesh, ModelStableDiffusion, ModelSAM2
-from scenefactor.utils.geom import bmask_iou
-
-
-def compute_bbox(bmask: NumpyTensor['h', 'w']) -> tuple[int, int, int, int]:
-    """
-    Returns the bounding box of a binary mask, where the minimum is inclusive and the maximum is exclusive.
-    """
-    rows = np.any(bmask, axis=1)
-    cols = np.any(bmask, axis=0)
-    rmin, rmax = np.where(rows)[0][[0, -1]]
-    cmin, cmax = np.where(cols)[0][[0, -1]]
-    rmax += 1
-    cmax += 1
-    return rmin, rmax, cmin, cmax
-
-
-def compute_holes(bmask: NumpyTensor['h', 'w']) -> list[tuple[NumpyTensor['h', 'w'], int]]:
-    """
-    Computes the holes in a binary mask. Assumes (0, 0) is background (can check with compute_bbox).
-    """
-    bmask = ~bmask
-    nregions, regions, stats, _ = cv2.connectedComponentsWithStats(bmask, 8)
-    holes = []
-    for i in range(1, nregions): # index 0 refers to all pixels with label 0 (object)
-        if regions[i][0, 0]:
-            continue
-        holes.append((regions[i], stats[i, cv2.CC_STAT_AREA])) # (region bmask, area)
-    return holes
+from scenefactor.utils.geom import *
+from scenefactor.utils.colormaps import *
+from scenefactor.sequence_factorization_utils import *
 
 
 class SequenceExtraction:
@@ -46,34 +23,113 @@ class SequenceExtraction:
         self.config = config
         self.model = ModelInstantMesh(config.model)
     
-    def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
+    def __call__(self, sequence: FrameSequence, instance2semantic: dict[int, int]) -> dict[int, Trimesh]:
         """
         """
-        def compute_view_score(bmask: NumpyTensor['h', 'w']) -> bool:
+        def compute_bmasks(sequence: FrameSequence) -> dict[int, dict[int, NumpyTensor['h', 'w']]]:
             """
             """
-            # make sure you can get a good crop (return 0 if not)
-            # determine if each label is a good view using sequence by looking at holes in instance mask as well as ensuring object is not close to edges
-            pass
+            bmasks = defaultdict(dict)
+            for index, imask in tqdm(enumerate(sequence.imasks), desc='Sequence extraction computing bmasks'):
+                for label in np.unique(imask):
+                    if label not in instance2semantic:
+                        continue
+                    semantic_info = sequence.metadata['semantic_info'][instance2semantic[label]]
+                    if semantic_info['class'] == 'stuff':
+                        continue
+                    bmask = imask == label
+                    bmask = remove_artifacts(bmask, mode='islands', min_area=self.config.score_hole_area_threshold)
+                    bmask = remove_artifacts(bmask, mode='holes'  , min_area=self.config.score_hole_area_threshold)
+                    if not np.any(bmask):
+                        continue
+                    bmasks[label][index] = bmask
+            return bmasks
 
-        def process(label: int, score_threshold=0.5) -> Trimesh | None:
+        sequence_bmasks = compute_bmasks(sequence) # label: index: bmasks
+
+        def compute_bboxes(sequence: FrameSequence) -> list[dict[int, BBox]]:
             """
             """
-            max_score, max_view = 0, None
-            for i in range(len(sequence)):
-                label_bmask = sequence[i].imask == label
-                score, view = compute_view_score(label_bmask)
-                if score > score_threshold and score > max_score:
-                    max_score, max_view = score, view
-            if max_view is None:
+            boxes = defaultdict(dict)
+            for iter, (label, index2bmask) in tqdm(enumerate(sequence_bmasks.items()), desc='Sequence extraction computing bboxes'):
+                for index, bmask in index2bmask.items():
+                    boxes[label][index] = compute_bbox(bmask)
+            return boxes
+
+        sequence_bboxes = compute_bboxes(sequence) # label: index: bbox
+
+        def compute_view_score(label: int, index: int) -> float:
+            """
+            """
+            bmask = sequence_bmasks[label][index]
+            imask = sequence.imasks[index]
+            image = sequence.images[index]
+            bbox  = sequence_bboxes[label][index]
+            bbox_expanded = resize_bbox(sequence_bboxes[label][index], mult=self.config.score_expand_mult)
+
+            # Condition 1: valid bbox
+            if not bbox_check_bounds(bbox_expanded, *bmask.shape):
+                return 0, None
+            bbox_occupancy = bmask.sum() / bbox_area(bbox)
+            if bbox_occupancy < self.config.score_bbox_occupancy_threshold:
+                return 0, None
+            if bbox_area(bbox) < self.config.score_bbox_min_area:
+                return 0, None
+            
+            # Condition 2: no holes due to occlusions
+            holes = compute_holes(bmask)
+            if len(holes):
+                return 0, None
+            
+            # Condition 3: no handle non hole occlusion cases
+            for label_other in sequence_bboxes:
+                if label == label_other:
+                    continue
+                if index not in sequence_bboxes[label_other]:
+                    continue
+                bbox_other = sequence_bboxes[label_other][index]
+                intersection = bbox_intersection(bbox, bbox_other)
+                if intersection is None:
+                    continue
+                if bbox_area(intersection) < self.config.score_bbox_overlap_threshold:
+                    continue
+                labels, counts = np.unique(crop(imask, intersection), return_counts=True)
+                if labels[np.argmax(counts)] == label:
+                    continue
+                return 0, None
+
+            score = bbox_occupancy
+            image_view = crop(remove_background(image, bmask, background=255), bbox_expanded)
+            bmask_view = crop(bmask, bbox_expanded)
+            return score, image_view
+
+        def process(label: int) -> Trimesh | None:
+            """
+            """
+            if label not in sequence_bmasks:
                 return None
-            return self.model.process(max_view)
-
+            
+            max_score = 0
+            max_image = None
+            max_index = None
+            for index, _ in sequence_bmasks[label].items():
+                score, image = compute_view_score(label, index)
+                if score > max_score:
+                    max_score = score
+                    max_image = image
+                    max_index = index
+            if max_image is None:
+                return None
+            print(max_score, max_index)
+            colormap_image(max_image).save(f'image_view_{label}_{max_index}.png')
+            mesh = self.model(max_image)
+            mesh.export(f'mesh_{label}.obj')
+            return mesh
+        
         meshes = {}
-        for label in np.unique(sequence.imask):
-            mesh = process(label)
-            if mesh is not None:
-                meshes[label] = mesh
+        for label in np.unique(sequence.imasks):
+            meshes[label] = process(label)
+        exit()
         return meshes
 
 
@@ -131,18 +187,41 @@ class SequenceFactorization:
     def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
         """
         """
+        instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
+
         sequence = sequence.clone()
         sequence.metadata['labels'] = set(np.unique(sequence.imask))
         meshes_total = {}
         while True: # either use num iters or until no more new labels extracted
-            meshes = self.extractor(sequence)
+            meshes = self.extractor(sequence, instance2semantic)
             sequence = self.inpainter(sequence, meshes.keys())
             meshes_total.update(meshes)
         return meshes_total
 
 
 if __name__ == '__main__':
-    pass
+    from scenefactor.data.sequence_reader import ReplicaVMapFrameSequenceReader
+
+    reader = ReplicaVMapFrameSequenceReader('/home/gtangg12/data/replica-vmap', 'room_0', save_dir='/home/gtangg12/data/scenefactor/replica-vmap')
+    sequence = reader.read()
+
+    instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
+
+    extractor = SequenceExtraction(OmegaConf.create({
+        'model': {
+            'script_path': 'third_party/InstantMesh/run.py',
+            'model_config_path': 'configs/instant-mesh-large.yaml',
+            'image_path': 'examples/input.png',
+            'tmesh_path': 'outputs/instant-mesh-large/meshes/input.obj'
+        },
+        'score_expand_mult': 1.25,
+        'score_hole_area_threshold': 128,
+        'score_bbox_min_area': 1024,
+        'score_bbox_occupancy_threshold': 0.6,
+        'score_bbox_overlap_threshold': 64,
+    }))
+    extractor(sequence, instance2semantic)
+    
 
 
 '''

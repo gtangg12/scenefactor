@@ -18,6 +18,7 @@ dependencies = [
     "natsort",
     "numpy==1.26.4",
     "omegaconf",
+    "openai-clip",
     "opencv-python",
     "pyrender",
     "torch==2.4.0",

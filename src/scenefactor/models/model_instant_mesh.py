@@ -8,11 +8,19 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 from scenefactor.data.common import NumpyTensor
+from scenefactor.data.mesh import read_mesh
 
 
 class ModelInstantMesh:
     """
     """
+    TRANSFORM = np.array([
+        [ 1,  0,  0,  0],
+        [ 0,  0, -1,  0],
+        [ 0,  1,  0,  0],
+        [ 0,  0,  0,  1],
+    ])
+
     def __init__(self, config: OmegaConf):
         """
         """
@@ -28,8 +36,9 @@ class ModelInstantMesh:
 
         subprocess.run(['python3', script_name, 
                         self.config.model_config_path, self.config.image_path], cwd=script_parent)
-
-        return trimesh.load_mesh(script_parent / self.config.tmesh_path)
+        subprocess.run(['pkill', '-f', script_name])
+        
+        return read_mesh(script_parent / self.config.tmesh_path, norm=True, transform=self.TRANSFORM)
     
 
 if __name__ == '__main__':

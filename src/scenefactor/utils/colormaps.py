@@ -1,8 +1,15 @@
+import cv2
 import numpy as np
 from PIL import Image
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.utils.geom import combine_bmasks
+from scenefactor.utils.geom import BBox, combine_bmasks
+
+
+def colormap_image(image: NumpyTensor['h w 3']) -> Image.Image:
+    """
+    """
+    return Image.fromarray(image.astype(np.uint8))
 
 
 def colormap_depth(depth: NumpyTensor['h', 'w']) -> Image.Image:
@@ -45,3 +52,20 @@ def colormap_bmasks(
     """
     mask = combine_bmasks(masks)
     return colormap_mask(mask, image, background=background, blend=blend)
+
+
+def colormap_bbox(bbox: BBox, image: NumpyTensor['h w 3'], color=(0, 255, 0)) -> Image.Image:
+    """
+    """
+    image_bbox = image.copy()
+    cv2.rectangle(image_bbox, (bbox[1], bbox[0]), (bbox[3], bbox[2]), color, 2)
+    return Image.fromarray(image_bbox)
+
+
+def colormap_bboxes(bboxes: list[BBox], image: NumpyTensor['h w 3'], color=(0, 255, 0)) -> Image.Image:
+    """
+    """
+    image_bboxes = image.copy()
+    for bbox in bboxes:
+        cv2.rectangle(image_bboxes, (bbox[1], bbox[0]), (bbox[3], bbox[2]), color, 2)
+    return Image.fromarray(image_bboxes)
