@@ -175,3 +175,13 @@ def remove_artifacts(bmask: NumpyTensor['h', 'w'], mode: str, min_area=128) -> N
     if not mode_holes:
         fill = [i for i in range(nregions) if i not in fill]
     return np.isin(regions, fill)
+
+
+def remove_artifacts_cmask(mask: NumpyTensor['h', 'w'], mode: str, min_area=128) -> NumpyTensor['h', 'w']:
+    """
+    Removes small islands/fill holes from a mask.
+    """
+    mask_combined = np.zeros_like(mask)
+    for label in np.unique(mask):
+        mask_combined[remove_artifacts(mask == label, mode=mode, min_area=min_area)] = label
+    return mask_combined

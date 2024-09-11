@@ -6,6 +6,13 @@ from scenefactor.data.common import NumpyTensor
 from scenefactor.utils.geom import BBox, combine_bmasks
 
 
+BLACK = (  0,   0,   0)
+WHITE = (255, 255, 255)
+RED   = (255,   0,   0)
+GREEN = (  0, 255,   0)
+BLUE  = (  0,   0, 255)
+
+
 def colormap_image(image: NumpyTensor['h w 3']) -> Image.Image:
     """
     """
@@ -23,7 +30,7 @@ def colormap_depth(depth: NumpyTensor['h', 'w']) -> Image.Image:
 
 def colormap_mask(
     mask : NumpyTensor['h w'], 
-    image: NumpyTensor['h w 3']=None, background=np.array([255, 255, 255]), foreground=None, blend=0.25
+    image: NumpyTensor['h w 3']=None, background=WHITE, foreground=None, blend=0.25
 ) -> Image.Image:
     """
     """
@@ -41,20 +48,20 @@ def colormap_mask(
 def colormap_bmask(bmask: NumpyTensor['h w']) -> Image.Image:
     """
     """
-    return colormap_mask(bmask, background=np.array([0, 0, 0]), foreground=np.array([255, 255, 255]))
+    return colormap_mask(bmask, background=BLACK, foreground=WHITE)
 
 
 def colormap_bmasks(
     masks: NumpyTensor['n h w'], 
-    image: NumpyTensor['h w 3']=None, background=np.array([255, 255, 255]), blend=0.25
+    image: NumpyTensor['h w 3']=None, background=WHITE, blend=0.25
 ) -> Image.Image:
     """
     """
-    mask = combine_bmasks(masks)
+    mask = combine_bmasks(masks, sort=True)
     return colormap_mask(mask, image, background=background, blend=blend)
 
 
-def colormap_bbox(bbox: BBox, image: NumpyTensor['h w 3'], color=(0, 255, 0)) -> Image.Image:
+def colormap_bbox(bbox: BBox, image: NumpyTensor['h w 3'], color=GREEN) -> Image.Image:
     """
     """
     image_bbox = image.copy()
@@ -62,7 +69,7 @@ def colormap_bbox(bbox: BBox, image: NumpyTensor['h w 3'], color=(0, 255, 0)) ->
     return Image.fromarray(image_bbox)
 
 
-def colormap_bboxes(bboxes: list[BBox], image: NumpyTensor['h w 3'], color=(0, 255, 0)) -> Image.Image:
+def colormap_bboxes(bboxes: list[BBox], image: NumpyTensor['h w 3'], color=GREEN) -> Image.Image:
     """
     """
     image_bboxes = image.copy()

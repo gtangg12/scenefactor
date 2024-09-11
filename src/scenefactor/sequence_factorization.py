@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence, compute_instance2semantic_label_mapping
-from scenefactor.models import ModelInstantMesh, ModelStableDiffusion, ModelSAM2
+from scenefactor.models import ModelInstantMesh, ModelStableDiffusion, ModelLama, ModelSAM
 from scenefactor.utils.geom import *
 from scenefactor.utils.colormaps import *
 from scenefactor.sequence_factorization_utils import *
@@ -34,7 +34,8 @@ class SequenceExtraction:
             """
             """
             bmasks = defaultdict(dict)
-            for index, imask in tqdm(enumerate(sequence.imasks), desc='Sequence extraction computing bmasks'):
+            index = 0 # tqdm progress bar doesn't show with enumerate
+            for imask in tqdm(sequence.imasks, desc='Sequence extraction computing bmasks'):
                 for label in np.unique(imask):
                     if label not in instance2semantic:
                         continue
@@ -47,6 +48,7 @@ class SequenceExtraction:
                     if not np.any(bmask):
                         continue
                     bmasks[label][index] = bmask
+                index += 1
             return bmasks
         
         sequence_bmasks = compute_bmasks(sequence) # label: index: bmask
@@ -55,7 +57,7 @@ class SequenceExtraction:
             """
             """
             boxes = defaultdict(dict)
-            for iter, (label, index2bmask) in tqdm(enumerate(sequence_bmasks.items()), desc='Sequence extraction computing bboxes'):
+            for label, index2bmask in tqdm(sequence_bmasks.items(), desc='Sequence extraction computing bboxes'):
                 for index, bmask in index2bmask.items():
                     boxes[label][index] = compute_bbox(bmask)
             return boxes
@@ -136,6 +138,7 @@ class SequenceExtraction:
         labels = [72]
         meshes = {}
         for label in labels:
+            print(f'Extracting label {label}')
             meshes[label] = process(label)
             if meshes[label] is not None:
                 return meshes
@@ -145,8 +148,6 @@ class SequenceExtraction:
 class SequenceInpainting:
     """
     """
-    INPAINTING_PROMPT = 'Background'
-
     def __init__(self, config: OmegaConf):
         """
         """
@@ -159,10 +160,10 @@ class SequenceInpainting:
         """ 
         # Not enough memory to load all models at once
         def call_inpainter(*args, **kwargs):
-            return ModelStableDiffusion(self.config.model_inpainter)(*args, **kwargs)
+            return ModelLama(self.config.model_inpainter)(*args, **kwargs)
         
         def call_segmenter(*args, **kwargs):
-            return ModelSAM2(self.config.model_segmenter)(*args, **kwargs)
+            return ModelSAM(self.config.model_segmenter)(*args, **kwargs)
         
         def predict_label(index: int, bmask: NumpyTensor['h', 'w']) -> int:
             """
@@ -175,14 +176,15 @@ class SequenceInpainting:
             bmask = sequence_updated.imasks[index] == label
             if not np.any(bmask):
                 return
-            bmask = cv2.dilate(bmask.astype(np.uint8), np.ones((5, 5), np.uint8), iterations=1).astype(bool)
+            bmask = cv2.dilate(bmask.astype(np.uint8), np.ones((9, 9), np.uint8), iterations=1)
             image = sequence_updated.images[index]
             colormap_image(image).save(f'image_{index}.png')
             colormap_bmask(bmask).save(f'bmask_{index}.png')
-            image_updated = call_inpainter(self.INPAINTING_PROMPT, image, bmask)
-            masks = call_segmenter(image_updated) 
+            image_updated = call_inpainter(image, bmask)
+            masks = call_segmenter(image_updated, dilate=(5, 5))
             colormap_image(image_updated).save(f'image_updated_{index}.png')
             colormap_bmasks(masks).save(f'masks_{index}.png')
+            exit()
             for bmask_sam in masks:
                 if bmask_iou(bmask, bmask_sam) > self.config.bmask_iou_threshold:
                     # inpainting operates on tensor views of sequence
@@ -191,7 +193,8 @@ class SequenceInpainting:
 
         sequence_updated = sequence.clone()
         for label in labels_to_inpaint:
-            for i in range(len(sequence)):
+            print(f'Inpainting label {label}')
+            for i in tqdm(range(len(sequence))):
                 inpaint(sequence_updated, i, label)
             exit()
         return sequence_updated
@@ -251,14 +254,15 @@ if __name__ == '__main__':
     })
     inpainter_config = OmegaConf.create({
         'model_inpainter': {
-            'checkpoint': 'benjamin-paine/stable-diffusion-v1-5-inpainting'
+            'checkpoint': '/home/gtangg12/scenefactor/checkpoints/big-lama'
         },
         'model_segmenter': {
-            'checkpoint': 'checkpoints/sam2_hiera_large.pt', 
+            'checkpoint': '/home/gtangg12/scenefactor/checkpoints/sam_vit_h_4b8939.pth', #'/home/gtangg12/scenefactor/checkpoints/sam2_hiera_large.pt',
             'model_config': 'sam2_hiera_l.yaml',
-            'mode': 'auto'
+            'mode': 'auto',
+            'min_area': 1024,
+            'engine_config': {}
         },
-        'bmask_iou_threshold': 0.5,
         'cache_dir': reader.save_dir / 'sequence_factorization_inpainting'
     })
     sequence_factorization = SequenceFactorization(OmegaConf.create({
