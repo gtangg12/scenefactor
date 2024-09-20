@@ -22,7 +22,7 @@ class ModelRam:
         self.device = device
 
         self.transform = transform_imagenet(resize=self.RESIZE)
-        self.model = ram_plus(pretrained=config.checkpoint, image_size=config.image_size, vit='swin_l')
+        self.model = ram_plus(pretrained=config.checkpoint, image_size=self.RESIZE[0], vit='swin_l')
         self.model.to(device)
         self.model.eval()
 
