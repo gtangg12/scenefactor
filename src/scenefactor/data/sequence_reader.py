@@ -26,6 +26,7 @@ class FrameSequenceReader(ABC):
         """
         """
         self.name = name
+        self.base_dir = Path(base_dir)
         self.data_dir = Path(base_dir) / name
         self.save_dir = Path(save_dir) / name
         self.metadata = self.load_metadata()
@@ -108,7 +109,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         self.data_dir = self.data_dir / 'imap' / track
         self.save_dir = self.save_dir / track
 
-    def read(self, slice=(0, -1, 20), override=False) -> FrameSequence:
+    def read(self, slice=(0, -1, 20), resize: tuple[int, int]=None, override=False) -> FrameSequence:
         """
         """
         if self.save_dir.exists() and not override:
@@ -153,10 +154,10 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         
         sequence = FrameSequence(
             poses=poses,
-            images=np.array([self.load_image(f) for f in image_filenames]),
-            depths=np.array([self.load_depth(f, scale=self.metadata['depth_scale']) for f in depth_filenames]),
-            smasks=np.array([self.load_smask(f) for f in smask_filenames]),
-            imasks=np.array([self.load_imask(f) for f in imask_filenames]),
+            images=np.array([self.load_image(f, resize) for f in image_filenames]),
+            depths=np.array([self.load_depth(f, resize, scale=self.metadata['depth_scale']) for f in depth_filenames]),
+            smasks=np.array([self.load_smask(f, resize) for f in smask_filenames]),
+            imasks=np.array([self.load_imask(f, resize) for f in imask_filenames]),
             metadata=self.metadata
         )
         save_sequence(self.save_dir, sequence)

@@ -3,6 +3,7 @@ import os
 from collections import defaultdict
 from glob import glob
 from pathlib import Path
+from termcolor import colored
 
 import cv2
 import numpy as np
@@ -11,8 +12,8 @@ from trimesh.base import Trimesh
 from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.data.sequence import FrameSequence, compute_instance2semantic_label_mapping
-from scenefactor.models import ModelInstantMesh, ModelStableDiffusion, ModelLama, ModelSAM
+from scenefactor.data.sequence import FrameSequence, image2sequence, compute_instance2semantic_label_mapping
+from scenefactor.models import ModelInstantMesh, ModelStableDiffusion, ModelLama, ModelSam
 from scenefactor.utils.geom import *
 from scenefactor.utils.colormaps import *
 from scenefactor.sequence_factorization_utils import *
@@ -126,22 +127,22 @@ class SequenceExtraction:
                     max_index = index
             if max_image is None:
                 return None
-            print(max_score, max_index)
-            colormap_image(max_image).save(f'image_view_{label}_{max_index}.png')
+            
+            print(colored(f'Extracting label {label}', 'green'))
+            colormap_image(max_image).save(f'tmp/image_view_{label}_{max_index}.png')
             mesh = self.model(max_image)
-            mesh.export(f'mesh_{label}.obj')
+            mesh.export(f'tmp/mesh_{label}.obj')
             return mesh
         
         labels = np.unique(sequence.imasks)
-        import random
-        random.shuffle(labels)
-        labels = [72]
+        #import random
+        #random.shuffle(labels)
+        #labels = [72]
         meshes = {}
         for label in labels:
-            print(f'Extracting label {label}')
-            meshes[label] = process(label)
-            if meshes[label] is not None:
-                return meshes
+            mesh = process(label)
+            if mesh is not None:
+                meshes[label] = mesh
         return meshes
 
 
@@ -161,16 +162,22 @@ class SequenceInpainting:
         # Not enough memory to load all models at once
         def call_inpainter(*args, **kwargs):
             return ModelLama(self.config.model_inpainter)(*args, **kwargs)
-        
-        def call_segmenter(*args, **kwargs):
-            return ModelSAM(self.config.model_segmenter)(*args, **kwargs)
-        
-        def predict_label(index: int, bmask: NumpyTensor['h', 'w']) -> int:
-            """
-            """
-            return np.argmax(np.bincount(sequence.imasks[index][bmask]))
 
-        def inpaint(sequence_updated: FrameSequence, index: int, label: int):
+        def call_segmenter(*args, **kwargs):
+            return ModelSam(self.config.model_segmenter)(*args, **kwargs)
+        
+        def predict_label(index: int, label: int, bmask: NumpyTensor['h', 'w']) -> int:
+            """
+            """
+            labels, counts = np.unique(sequence.imasks[index][bmask], return_counts=True)
+            valids = labels != label
+            labels = labels[valids]
+            counts = counts[valids]
+            if len(labels) == 0:
+                return label # dead label that will result in occluded object not being activated from this frame
+            return labels[np.argmax(counts)]
+
+        def inpaint(sequence_updated: FrameSequence, index: int, label: int, downsample=2):
             """
             """
             bmask = sequence_updated.imasks[index] == label
@@ -178,25 +185,37 @@ class SequenceInpainting:
                 return
             bmask = cv2.dilate(bmask.astype(np.uint8), np.ones((9, 9), np.uint8), iterations=1)
             image = sequence_updated.images[index]
-            colormap_image(image).save(f'image_{index}.png')
-            colormap_bmask(bmask).save(f'bmask_{index}.png')
-            image_updated = call_inpainter(image, bmask)
-            masks = call_segmenter(image_updated, dilate=(5, 5))
-            colormap_image(image_updated).save(f'image_updated_{index}.png')
-            colormap_bmasks(masks).save(f'masks_{index}.png')
-            exit()
-            for bmask_sam in masks:
-                if bmask_iou(bmask, bmask_sam) > self.config.bmask_iou_threshold:
-                    # inpainting operates on tensor views of sequence
-                    sequence_updated.imasks[index][bmask & bmask_sam] = predict_label(index, bmask_sam)
+            imask = sequence_updated.imasks[index]
+            H, W = image.shape[:2]
+            colormap_image(image).save(f'tmp/image_{label}_{index}.png')
+            colormap_bmask(bmask).save(f'tmp/bmask_{label}_{index}.png')
+            colormap_cmask(imask).save(f'tmp/imask_{label}_{index}.png')        
+            
+            image_input = cv2.resize(image, (W // downsample, H // downsample))
+            bmask_input = cv2.resize(bmask, (W // downsample, H // downsample))
+            image_updated = call_inpainter(image_input, bmask_input)
+
+            bmasks_sam = call_segmenter(image_updated, dilate=(5, 5))
+            bmasks_sam = np.stack([cv2.resize(bmask.astype(np.uint8), (W, H)) for bmask in bmasks_sam]).astype(bool)
+            colormap_bmasks(bmasks_sam).save(f'tmp/sam_masks_{label}_{index}.png')
+
+            image_updated = cv2.resize(image_updated, (W, H))
+            imask_updated = np.array(imask)
+            for i, bmask_sam in enumerate(bmasks_sam):
+                if np.any(bmask_sam & bmask):
+                    imask_updated[np.where(bmask_sam & bmask)] = predict_label(index, label, bmask_sam)
+            imask_updated = remove_artifacts_cmask(imask_updated, mode='islands', min_area=self.config.bmask_min_area)
+            imask_updated = remove_artifacts_cmask(imask_updated, mode='holes'  , min_area=self.config.bmask_min_area)
             sequence_updated.images[index] = image_updated
+            sequence_updated.imasks[index] = imask_updated
+            colormap_image(sequence_updated.images[index]).save(f'tmp/image_updated_{label}_{index}.png')
+            colormap_cmask(sequence_updated.imasks[index]).save(f'tmp/imask_updated_{label}_{index}.png')
 
         sequence_updated = sequence.clone()
         for label in labels_to_inpaint:
-            print(f'Inpainting label {label}')
+            print(colored(f'Inpainting label {label}', 'green'))
             for i in tqdm(range(len(sequence))):
                 inpaint(sequence_updated, i, label)
-            exit()
         return sequence_updated
 
 
@@ -219,6 +238,7 @@ class SequenceFactorization:
         meshes_total = {}
         for i in range(self.config.max_iterations):
             meshes = self.extractor(sequence, instance2semantic)
+            print(colored(f'Iteration {i} extracted {len(meshes)} meshes', 'green'))
             if len(meshes) == 0:
                 break
             sequence = self.inpainter(sequence, meshes.keys())
@@ -234,7 +254,8 @@ if __name__ == '__main__':
         save_dir='/home/gtangg12/data/scenefactor/replica-vmap', 
         name='room_0',
     )
-    sequence = reader.read()
+    sequence = reader.read(slice=(0, 1, 250), override=True)
+    Image.fromarray(sequence.images[0]).save('tmp/input.png')
 
     instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
 
@@ -263,6 +284,7 @@ if __name__ == '__main__':
             'min_area': 1024,
             'engine_config': {}
         },
+        'bmask_min_area': 32,
         'cache_dir': reader.save_dir / 'sequence_factorization_inpainting'
     })
     sequence_factorization = SequenceFactorization(OmegaConf.create({

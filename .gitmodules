@@ -10,3 +10,9 @@
 [submodule "third_party/segment-anything"]
 	path = third_party/segment-anything
 	url = git@github.com:facebookresearch/segment-anything.git
+[submodule "third_party/recognize-anything"]
+	path = third_party/recognize-anything
+	url = git@github.com:xinyu1205/recognize-anything.git
+[submodule "third_party/GroundingDino"]
+	path = third_party/GroundingDino
+	url = git@github.com:IDEA-Research/GroundingDINO.git

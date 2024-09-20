@@ -15,7 +15,7 @@ def normalize(x, p=2, dim=0, eps=1e-12):
     return x / (norm + eps)
 
 
-def homogeneous_transform(transform: NumpyTensor['4 4'], coords: NumpyTensor['n 3']) -> NumpyTensor['n 3']:
+def homogeneous_transform(transform: NumpyTensor[4, 4], coords: NumpyTensor['n', 3]) -> NumpyTensor['n', 3]:
     """
     Apply homogeneous transformation to coordinates.
     """
@@ -23,7 +23,7 @@ def homogeneous_transform(transform: NumpyTensor['4 4'], coords: NumpyTensor['n 
     return (transform @ homogeneous.T).T[:, :3]
 
 
-def homogeneous_transform_handle_small(transform: NumpyTensor['4 4']) -> NumpyTensor['4 4']:
+def homogeneous_transform_handle_small(transform: NumpyTensor[4, 4]) -> NumpyTensor[4, 4]:
     """
     Handles common case that results from numerical instability.
     """
@@ -33,21 +33,21 @@ def homogeneous_transform_handle_small(transform: NumpyTensor['4 4']) -> NumpyTe
     return transform
 
 
-def bounding_box(coords: NumpyTensor['n 3']) -> NumpyTensor['2 3']:
+def bounding_box(coords: NumpyTensor['n', 3]) -> NumpyTensor[2, 3]:
     """
     Compute bounding box from coordinates.
     """
     return np.array([coords.min(axis=0), coords.max(axis=0)])
 
 
-def bounding_box_centroid(coords: NumpyTensor['n 3']) -> NumpyTensor['3']:
+def bounding_box_centroid(coords: NumpyTensor['n', 3]) -> NumpyTensor[3]:
     """
     Compute bounding box centroid from coordinates.
     """
     return bounding_box(coords).mean(axis=0)
 
 
-def bmask_sample_points(bmask: NumpyTensor['h', 'w'], num_samples: int) -> NumpyTensor['n 2']:
+def bmask_sample_points(bmask: NumpyTensor['h', 'w'], num_samples: int) -> NumpyTensor['n', 2]:
     """
     Sample points from binary mask.
     """
@@ -64,7 +64,7 @@ def bmask_iou(bmask1: NumpyTensor['h', 'w'], bmask2: NumpyTensor['h', 'w']) -> f
     return np.sum(bmask1 & bmask2) / np.sum(bmask1 | bmask2)
 
 
-def combine_bmasks(bmasks: NumpyTensor['n h w'], sort=False) -> NumpyTensor['h w']:
+def combine_bmasks(bmasks: NumpyTensor['n', 'h', 'w'], sort=False) -> NumpyTensor['h w']:
     """
     """
     cmask = np.zeros_like(bmasks[0], dtype=int)
@@ -75,7 +75,7 @@ def combine_bmasks(bmasks: NumpyTensor['n h w'], sort=False) -> NumpyTensor['h w
     return cmask
 
 
-def decompose_cmask(cmask: NumpyTensor['h w'], background=None) -> NumpyTensor['n h w']:
+def decompose_cmask(cmask: NumpyTensor['h', 'w'], background=None) -> NumpyTensor['n', 'h', 'w']:
     """
     """
     labels = np.unique(cmask)
@@ -83,6 +83,46 @@ def decompose_cmask(cmask: NumpyTensor['h w'], background=None) -> NumpyTensor['
     if background is not None:
         labels = labels[labels != background]
     return cmask == labels[:, None, None]
+
+
+def deduplicate_bmasks(bmasks: NumpyTensor['n', 'h', 'w'], iou=0.85, return_indices=False) -> NumpyTensor['n', 'h', 'w']:
+    """
+    Given binary masks `bmasks`, deduplicate them as defined by IoU threshold.
+    """
+    bmasks_dedup, indices = [bmasks[0]], [0]
+    for i, bmask in enumerate(bmasks[1:]):
+        ious = [bmask_iou(bmask, bm) for bm in bmasks_dedup]
+        if max(ious) < iou:
+            bmasks_dedup.append(bmask), indices.append(i + 1)
+    bmasks_dedup, indices = np.stack(bmasks_dedup), np.array(indices)
+    if return_indices:
+        return bmasks_dedup, indices
+    return bmasks_dedup
+
+
+def remove_artifacts(bmask: NumpyTensor['h', 'w'], mode: str, min_area=128) -> NumpyTensor['h', 'w']:
+    """
+    Removes small islands/fill holes from a mask.
+    """
+    assert mode in ['holes', 'islands']
+    mode_holes = (mode == 'holes')
+    bmask = (mode_holes ^ bmask).astype(np.uint8)
+    nregions, regions, stats, _ = cv2.connectedComponentsWithStats(bmask, 8)
+    sizes = stats[:, -1][1:]  # Row 0 corresponds to 0 pixels
+    fill = [i + 1 for i, s in enumerate(sizes) if s < min_area] + [0]
+    if not mode_holes:
+        fill = [i for i in range(nregions) if i not in fill]
+    return np.isin(regions, fill)
+
+
+def remove_artifacts_cmask(mask: NumpyTensor['h', 'w'], mode: str, min_area=128) -> NumpyTensor['h', 'w']:
+    """
+    Removes small islands/fill holes from a mask.
+    """
+    mask_combined = np.zeros_like(mask)
+    for label in np.unique(mask):
+        mask_combined[remove_artifacts(mask == label, mode=mode, min_area=min_area)] = label
+    return mask_combined
 
 
 def crop(image: NumpyTensor['h', 'w', 'c...'], bbox: BBox) -> NumpyTensor['h', 'w', 'c']:
@@ -131,7 +171,9 @@ def bbox_iou(bbox1: BBox, bbox2: BBox) -> float:
     """
     """
     intersection = bbox_intersection(bbox1, bbox2)
-    union        = bbox_union       (bbox1, bbox2)
+    if intersection is None:
+        return 0
+    union = bbox_union(bbox1, bbox2)
     return bbox_area(intersection) / bbox_area(union)
 
 
@@ -159,29 +201,20 @@ def resize_bbox(bbox: BBox, mult: float) -> BBox:
     csize = int((cmax - cmin) * mult)
     rmin, rmax = rcenter - rsize // 2, rcenter + rsize // 2
     cmin, cmax = ccenter - csize // 2, ccenter + csize // 2
-    return rmin, cmin, rmax, cmax 
+    return rmin, cmin, rmax, cmax
 
 
-def remove_artifacts(bmask: NumpyTensor['h', 'w'], mode: str, min_area=128) -> NumpyTensor['h', 'w']:
+def deduplicate_bboxes(bboxes: list[BBox], iou=0.85, return_indices=False) -> BBox:
     """
-    Removes small islands/fill holes from a mask.
+    Given bounding boxes `bboxes` in LRTB format, deduplicate them as defined by IoU threshold.
     """
-    assert mode in ['holes', 'islands']
-    mode_holes = (mode == 'holes')
-    bmask = (mode_holes ^ bmask).astype(np.uint8)
-    nregions, regions, stats, _ = cv2.connectedComponentsWithStats(bmask, 8)
-    sizes = stats[:, -1][1:]  # Row 0 corresponds to 0 pixels
-    fill = [i + 1 for i, s in enumerate(sizes) if s < min_area] + [0]
-    if not mode_holes:
-        fill = [i for i in range(nregions) if i not in fill]
-    return np.isin(regions, fill)
-
-
-def remove_artifacts_cmask(mask: NumpyTensor['h', 'w'], mode: str, min_area=128) -> NumpyTensor['h', 'w']:
-    """
-    Removes small islands/fill holes from a mask.
-    """
-    mask_combined = np.zeros_like(mask)
-    for label in np.unique(mask):
-        mask_combined[remove_artifacts(mask == label, mode=mode, min_area=min_area)] = label
-    return mask_combined
+    bboxes_dedup, indices = [bboxes[0]], [0]
+    for i, bbox in enumerate(bboxes[1:]):
+        print(bboxes_dedup)
+        ious = [bbox_iou(bbox, bb) for bb in bboxes_dedup]
+        if max(ious) < iou:
+            bboxes_dedup.append(bbox), indices.append(i + 1)
+    bboxes_dedup, indices = np.stack(bboxes_dedup), np.array(indices)
+    if return_indices:
+        return bboxes_dedup, indices
+    return bboxes_dedup

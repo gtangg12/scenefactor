@@ -119,6 +119,13 @@ def load_sequence(filename: Path | str) -> FrameSequence:
     return sequence
 
 
+def image2sequence(image: NumpyTensor['h', 'w', 3], pose=np.eye(4), metadata=None) -> FrameSequence:
+    """
+    Creates a FrameSequence object from a single image.
+    """
+    return FrameSequence(images=image[None, ...], poses=pose[None, ...], metadata=metadata)
+
+
 def compute_instance2semantic_label_mapping(
     sequence: FrameSequence,
     instance_background: int=None,
