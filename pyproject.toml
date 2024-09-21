@@ -16,6 +16,7 @@ dependencies = [
     "kornia_moons",
     "matplotlib",
     "natsort",
+    "ninja",
     "numpy==1.26.4",
     "omegaconf",
     "openai-clip",

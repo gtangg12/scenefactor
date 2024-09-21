@@ -210,7 +210,6 @@ def deduplicate_bboxes(bboxes: list[BBox], iou=0.85, return_indices=False) -> BB
     """
     bboxes_dedup, indices = [bboxes[0]], [0]
     for i, bbox in enumerate(bboxes[1:]):
-        print(bboxes_dedup)
         ious = [bbox_iou(bbox, bb) for bb in bboxes_dedup]
         if max(ious) < iou:
             bboxes_dedup.append(bbox), indices.append(i + 1)

@@ -21,6 +21,8 @@ class ModelGroundingDino:
         self.config = config
         self.device = device
         self.model = load_model(config.checkpoint_config, config.checkpoint)
+        self.model.to(device)
+        self.model.eval()
     
     def __call__(self, image: NumpyTensor['h', 'w', 3], labels: list[str]) -> list[BBox]:
         """
@@ -45,8 +47,8 @@ class ModelGroundingDino:
             bbox  = bbox .cpu().numpy()
             logit = logit.cpu().numpy()
             bbox = (bbox * np.array([W, H, W, H])).astype(int)
-            bbox = np.stack([
-                bbox[:, 1] - bbox[:, 3] // 2, # ccwh -> tlbr
+            bbox = np.stack([ # ccwh -> tlbr
+                bbox[:, 1] - bbox[:, 3] // 2,
                 bbox[:, 0] - bbox[:, 2] // 2,
                 bbox[:, 1] + bbox[:, 3] // 2, 
                 bbox[:, 0] + bbox[:, 2] // 2,

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-from torchvision.ops import masks_to_boxes
+import torchvision
 from PIL import Image
 from omegaconf import OmegaConf
 
@@ -18,18 +18,20 @@ from segment_anything import SamAutomaticMaskGenerator, SamPredictor, sam_model_
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.models import ModelRam, ModelGroundingDino
-from scenefactor.utils.geom import remove_artifacts_cmask, combine_bmasks, decompose_cmask, deduplicate_bmasks
-from scenefactor.utils.colormaps import colormap_bmasks
+from scenefactor.utils.geom import *
+from scenefactor.utils.colormaps import *
 
 
-def rasterize_clean_masks(bmasks: NumpyTensor['n', 'h', 'w'], min_area=128) -> NumpyTensor['n h w']:
+def rasterize_clean_masks(bmasks: NumpyTensor['n', 'h', 'w'], min_area=128) -> NumpyTensor['n', 'h', 'w'] | None:
     """
     Rasterizes and cleans masks. Removes holes/islands post rasterization.
     """
-    cmask = combine_bmasks(bmasks, sort=True)
+    cmask = combine_bmasks(bmasks)
     cmask = remove_artifacts_cmask(cmask, mode='holes'  , min_area=min_area)
     cmask = remove_artifacts_cmask(cmask, mode='islands', min_area=min_area)
-    bmasks = decompose_cmask(cmask)
+    bmasks = decompose_cmask(cmask, background=0) # combine_bmasks denotes background as 0
+    if len(bmasks) == 0:
+        return None
     return np.stack(bmasks)
 
 
@@ -52,9 +54,7 @@ class ModelSam:
             'auto': SamAutomaticMaskGenerator, #SAM2AutomaticMaskGenerator,
         }[self.config.mode](self.model, **self.config.get('engine_config', {}))
     
-    def __call__(
-        self, image: NumpyTensor['h', 'w', 3], prompt: dict = None, dilate: tuple[int, int] = None
-    ) -> NumpyTensor['n', 'h', 'w']:
+    def __call__(self, image: NumpyTensor['h', 'w', 3], prompt: dict=None) -> NumpyTensor['n', 'h', 'w']:
         """
         For information on prompt format see:
         
@@ -66,18 +66,13 @@ class ModelSam:
             annotations = self.engine.generate(image)
         else:
             self.engine.set_image(image)
-            annotations = self.engine.predict(**prompt)[0]        
+            annotations = self.engine.predict(**prompt)[0]
             annotations = [{'segmentation': m, 'area': m.sum().item()} for m in annotations] # Automatic Mask Generator format
-        
         annotations = sorted(annotations, key=lambda x: x['area'], reverse=True)
+        
         masks = np.stack([anno['segmentation'] for anno in annotations])
         masks = rasterize_clean_masks(masks, min_area=self.config.get('min_area', 128))
-        if dilate is not None:
-            masks = [
-                cv2.dilate(mask.astype(np.uint8), dilate, iterations=1).astype(bool)
-                for mask in masks
-            ]
-        return np.stack(masks)
+        return np.stack(masks) if masks is not None else None
 
 
 class ModelSamGrounded:
@@ -97,48 +92,37 @@ class ModelSamGrounded:
     def __call__(self, image: NumpyTensor['h', 'w', 3]) -> NumpyTensor['n', 'h', 'w']:
         """
         """
-        labels = self.model_ram(image)['ram']
-        bboxes, _ = self.model_grounding_dino(image, labels=[l.split(' | ') for l in labels])
-        
+        labels = self.model_ram(image)
+        bboxes_prompts, _ = self.model_grounding_dino(image, labels.split(' | '))
+
         bmasks = []
         bboxes = []
-        for bbox in bboxes:
-            mask, bbox = self.model_sam_pred.process(image, prompt={'box': bbox.numpy()})
-            bmasks.append(mask.permute(2, 0, 1))
+        for bbox in bboxes_prompts:
+            bbox_xyxy = np.stack([bbox[1], bbox[0], bbox[3], bbox[2]])
+            mask = self.model_sam_pred(image, prompt={'box': bbox_xyxy, 'multimask_output': False})
+            if mask is None:
+                continue
+            bmasks.append(mask[0])
             bboxes.append(bbox)
         bmasks, bboxes = zip(*sorted(zip(bmasks, bboxes), key=lambda x: x[0].sum().item(), reverse=True))
-        bmasks = np.concatenate(bmasks) # (n, H, W)
-        bboxes = np.concatenate(bboxes) # (n, 4)
+        bmasks = np.stack(bmasks) # (n, H, W)
+        bboxes = np.stack(bboxes) # (n, 4)
 
         if self.config.include_sam_auto:
-            bmasks_auto, bboxes_auto = self.model_sam_auto.process(image)
-            bmasks_auto = bmasks_auto.permute(2, 0, 1) # (n, H, W)
+            bmasks_auto = self.model_sam_auto(image)
             bmasks_auto = np.flip(bmasks_auto, axis=0) # sort SAM labels by increasing area
-            bboxes_auto = np.flip(bboxes_auto, axis=0)
             # grounded sam takes precedence over sam auto
-            bmasks = torch.concatenate([bmasks_auto, bmasks], axis=0) if len(bmasks) else bmasks_auto
-            bboxes = torch.concatenate([bboxes_auto, bboxes], axis=0) if len(bboxes) else bboxes_auto
+            bmasks = np.concatenate([bmasks_auto, bmasks], axis=0) if len(bmasks) else bmasks_auto
 
-        bmasks, indices = deduplicate_bmasks(bmasks, return_indices=True)
-        bboxes = bboxes[indices]
-        bmasks = rasterize_clean_masks(bmasks, min_region_area=self.config.sam_pred.min_region_area)
-        bboxes = masks_to_boxes(bmasks)
+        bmasks = deduplicate_bmasks(bmasks)
+        bmasks = rasterize_clean_masks(bmasks, min_area=self.config.get('min_area', 128))
+        bboxes = torchvision.ops.masks_to_boxes(torch.from_numpy(bmasks)).numpy()
         return bmasks.astype(bool), bboxes.astype(int)
 
 
 if __name__ == '__main__':
-    model = ModelSam(OmegaConf.create({
-        'checkpoint': '/home/gtangg12/scenefactor/checkpoints/sam_vit_h_4b8939.pth', #'/home/gtangg12/scenefactor/checkpoints/sam2_hiera_large.pt', 
-        #'model_config': 'sam2_hiera_l.yaml',
-        'mode': 'auto',
-        'engine_config': {}
-    }))
     image = Image.open('tests/room.png').convert('RGB')
     image = np.asarray(image)
-    masks = model(image)
-    print(masks.shape)
-    colormap_bmasks(masks, image).save('tests/sam_cmask.png')
-
     model = ModelSamGrounded(OmegaConf.create({
         'ram': {
             'checkpoint': '/home/gtangg12/scenefactor/checkpoints/ram_plus_swin_large_14m.pth'
@@ -159,8 +143,9 @@ if __name__ == '__main__':
             'mode': 'auto',
             'engine_config': {}
         },
-        'include_sam_auto': True
+        'include_sam_auto': True,
+        'min_area': 1024,
     }))
-    masks = model(image)
-    print(masks.shape)
-    colormap_bmasks(masks, image).save('tests/sam_grounded_cmask.png')
+    bmasks, bboxes = model(image)
+    print(bmasks.shape)
+    colormap_bmasks(bmasks, image).save('tests/sam_grounded_cmask.png')
