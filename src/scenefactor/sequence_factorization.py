@@ -12,8 +12,8 @@ from trimesh.base import Trimesh
 from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.data.sequence import FrameSequence, image2sequence, compute_instance2semantic_label_mapping
-from scenefactor.models import ModelInstantMesh, ModelStableDiffusion, ModelLama, ModelSam
+from scenefactor.data.sequence import FrameSequence, compute_instance2semantic_label_mapping
+from scenefactor.models import ModelInstantMesh, ModelLama, ModelSamGrounded
 from scenefactor.utils.geom import *
 from scenefactor.utils.colormaps import *
 from scenefactor.sequence_factorization_utils import *
@@ -26,44 +26,12 @@ class SequenceExtraction:
         """
         """
         self.config = config
-        self.model = ModelInstantMesh(config.model) # does not consume gpu memory since calls script internally
     
-    def __call__(self, sequence: FrameSequence, instance2semantic: dict[int, int]) -> dict[int, Trimesh]:
+    def __call__(self, sequence: FrameSequence, instance2semantic: dict[int, int]) -> dict[int, NumpyTensor['h', 'w', 3]]:
         """
-        """        
-        def compute_bmasks(sequence: FrameSequence):
-            """
-            """
-            bmasks = defaultdict(dict)
-            index = 0 # tqdm progress bar doesn't show with enumerate
-            for imask in tqdm(sequence.imasks, desc='Sequence extraction computing bmasks'):
-                for label in np.unique(imask):
-                    if label not in instance2semantic:
-                        continue
-                    semantic_info = sequence.metadata['semantic_info'][instance2semantic[label]]
-                    if semantic_info['class'] == 'stuff':
-                        continue
-                    bmask = imask == label
-                    bmask = remove_artifacts(bmask, mode='islands', min_area=self.config.score_hole_area_threshold)
-                    bmask = remove_artifacts(bmask, mode='holes'  , min_area=self.config.score_hole_area_threshold)
-                    if not np.any(bmask):
-                        continue
-                    bmasks[label][index] = bmask
-                index += 1
-            return bmasks
-        
-        sequence_bmasks = compute_bmasks(sequence) # label: index: bmask
-
-        def compute_bboxes(sequence: FrameSequence) -> list[dict[int, BBox]]:
-            """
-            """
-            boxes = defaultdict(dict)
-            for label, index2bmask in tqdm(sequence_bmasks.items(), desc='Sequence extraction computing bboxes'):
-                for index, bmask in index2bmask.items():
-                    boxes[label][index] = compute_bbox(bmask)
-            return boxes
-        
-        sequence_bboxes = compute_bboxes(sequence) # label: index: bbox
+        """
+        sequence_bmasks, sequence_bboxes = \
+            compute_sequence_bmasks_bboxes(sequence, instance2semantic, min_area=self.config.score_hole_area_threshold)    
 
         def compute_view_score(label: int, index: int) -> float:
             """
@@ -115,7 +83,6 @@ class SequenceExtraction:
             """
             if label not in sequence_bmasks:
                 return None
-            
             max_score = 0
             max_image = None
             max_index = None
@@ -130,20 +97,17 @@ class SequenceExtraction:
             
             print(colored(f'Extracting label {label}', 'green'))
             colormap_image(max_image).save(f'tmp/image_view_{label}_{max_index}.png')
-            mesh = self.model(max_image)
-            mesh.export(f'tmp/mesh_{label}.obj')
-            return mesh
-        
+            return max_image
+
+        #for index, image in enumerate(sequence.images):
+        #    colormap_image(image).save(f'tmp/image_{index}.png')
         labels = np.unique(sequence.imasks)
-        #import random
-        #random.shuffle(labels)
-        #labels = [72]
-        meshes = {}
+        images = {}
         for label in labels:
-            mesh = process(label)
-            if mesh is not None:
-                meshes[label] = mesh
-        return meshes
+            image = process(label)
+            if image is not None:
+                images[label] = image
+        return images
 
 
 class SequenceInpainting:
@@ -153,69 +117,82 @@ class SequenceInpainting:
         """
         """
         self.config = config
+        self.model_inpainter = ModelLama(config.model_inpainter)
+        self.model_segmenter = ModelSamGrounded(config.model_segmenter)
 
     def __call__(self, sequence: FrameSequence, labels_to_inpaint: set[int]) -> FrameSequence:
         """
-
         NOTE:: we do not propagate inpainting e.g. using NeRF since image to 3d involves only one frame
-        """ 
-        # Not enough memory to load all models at once
-        def call_inpainter(*args, **kwargs):
-            return ModelLama(self.config.model_inpainter)(*args, **kwargs)
-
-        def call_segmenter(*args, **kwargs):
-            return ModelSam(self.config.model_segmenter)(*args, **kwargs)
-        
-        def predict_label(index: int, label: int, bmask: NumpyTensor['h', 'w']) -> int:
+        """
+        def predict_label(
+            imask_input: NumpyTensor['h', 'w'],
+            bmask_input: NumpyTensor['h', 'w'],
+            imask_paint: NumpyTensor['h', 'w'],  
+            bmask_paint: NumpyTensor['h', 'w'], *args
+        ) -> int:
             """
             """
-            labels, counts = np.unique(sequence.imasks[index][bmask], return_counts=True)
-            valids = labels != label
-            labels = labels[valids]
-            counts = counts[valids]
+            bmask_paint = bmask_paint.astype(np.uint8)
+            bmask_paint = cv2.dilate(bmask_paint, np.ones((3, 3), np.uint8), iterations=1)
+            bmask_paint = bmask_paint.astype(bool)
+            
+            intersection = bmask_input & bmask_paint
+            if not np.any(intersection):
+                return
+            labels, counts = np.unique(imask_input[~bmask_input & bmask_paint], return_counts=True)
+            counts = counts[labels != -1] # ignore dead leaves
+            labels = labels[labels != -1]
             if len(labels) == 0:
-                return label # dead label that will result in occluded object not being activated from this frame
-            return labels[np.argmax(counts)]
+                return -1 # dead label that will result in occluded object not being activated from this frame
+            imask_paint[intersection] = labels[np.argmax(counts)]
 
-        def inpaint(sequence_updated: FrameSequence, index: int, label: int, downsample=2):
+        def inpaint(sequence_updated: FrameSequence, index: int, downsample=2):
             """
             """
-            bmask = sequence_updated.imasks[index] == label
+            bmask = np.zeros_like(sequence_updated.imasks[index])
+            for label in labels_to_inpaint:
+                bmask |= sequence_updated.imasks[index] == label 
             if not np.any(bmask):
                 return
-            bmask = cv2.dilate(bmask.astype(np.uint8), np.ones((9, 9), np.uint8), iterations=1)
             image = sequence_updated.images[index]
             imask = sequence_updated.imasks[index]
+            imask = imask.astype(np.uint8)
+            bmask = bmask.astype(np.uint8)
+            bmask = cv2.dilate(bmask, np.ones((3, 3), np.uint8), iterations=1) # dialate to remove boundary artifacts
+
+            # Downsample inputs for faster processing
             H, W = image.shape[:2]
-            colormap_image(image).save(f'tmp/image_{label}_{index}.png')
-            colormap_bmask(bmask).save(f'tmp/bmask_{label}_{index}.png')
-            colormap_cmask(imask).save(f'tmp/imask_{label}_{index}.png')        
-            
             image_input = cv2.resize(image, (W // downsample, H // downsample))
-            bmask_input = cv2.resize(bmask, (W // downsample, H // downsample))
-            image_updated = call_inpainter(image_input, bmask_input)
+            bmask_input = cv2.resize(bmask, (W // downsample, H // downsample), interpolation=cv2.INTER_NEAREST)
+            imask_input = cv2.resize(imask, (W // downsample, H // downsample), interpolation=cv2.INTER_NEAREST)
 
-            bmasks_sam = call_segmenter(image_updated, dilate=(5, 5))
-            bmasks_sam = np.stack([cv2.resize(bmask.astype(np.uint8), (W, H)) for bmask in bmasks_sam]).astype(bool)
-            colormap_bmasks(bmasks_sam).save(f'tmp/sam_masks_{label}_{index}.png')
+            # Compute RGB inpainting and SAM masks
+            image_paint = self.model_inpainter(image_input, bmask_input)
+            bmasks_sam  = self.model_segmenter(image_paint)
 
-            image_updated = cv2.resize(image_updated, (W, H))
-            imask_updated = np.array(imask)
-            for i, bmask_sam in enumerate(bmasks_sam):
-                if np.any(bmask_sam & bmask):
-                    imask_updated[np.where(bmask_sam & bmask)] = predict_label(index, label, bmask_sam)
-            imask_updated = remove_artifacts_cmask(imask_updated, mode='islands', min_area=self.config.bmask_min_area)
-            imask_updated = remove_artifacts_cmask(imask_updated, mode='holes'  , min_area=self.config.bmask_min_area)
-            sequence_updated.images[index] = image_updated
-            sequence_updated.imasks[index] = imask_updated
-            colormap_image(sequence_updated.images[index]).save(f'tmp/image_updated_{label}_{index}.png')
-            colormap_cmask(sequence_updated.imasks[index]).save(f'tmp/imask_updated_{label}_{index}.png')
+            # Use SAM masks for instance mask inpainting
+            imask_paint = np.array(imask_input)
+            imask_paint = imask_paint.astype(int)
+            bmask_input = bmask_input.astype(bool)
+            for i, bmask_sam in tqdm(enumerate(bmasks_sam)):
+                for j, bmask_paint in enumerate(connected_components(bmask_sam)):
+                        predict_label(imask_input, bmask_input, imask_paint, bmask_paint)
+            
+            # Upsample to original size
+            image_paint = cv2.resize(image_paint, (W, H))
+            imask_paint = cv2.resize(imask_paint, (W, H), interpolation=cv2.INTER_NEAREST)
+            
+            # Write to sequence
+            sequence_updated.images[index] = image_paint
+            sequence_updated.imasks[index] = imask_paint
+            colormap_image(sequence_updated.images[index]).save(f'tmp/image_paint_{label}_{index}.png')
+            colormap_cmask(sequence_updated.imasks[index]).save(f'tmp/imask_paint_{label}_{index}.png')
+            exit()
 
         sequence_updated = sequence.clone()
-        for label in labels_to_inpaint:
-            print(colored(f'Inpainting label {label}', 'green'))
-            for i in tqdm(range(len(sequence))):
-                inpaint(sequence_updated, i, label)
+        for i in tqdm(range(len(sequence))):
+            print(colored(f'Inpainting index {i}', 'green'))
+            inpaint(sequence_updated, i)
         return sequence_updated
 
 
@@ -226,23 +203,35 @@ class SequenceFactorization:
         """
         """
         self.config = config
-        self.extractor = SequenceExtraction(config.extractor)
-        self.inpainter = SequenceInpainting(config.inpaintor)
 
     def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
         """
         """
         instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
+        
+        # Not enough memory to load all modules at once
+        extractor = SequenceExtraction(self.config.extractor)
+        inpainter = SequenceInpainting(self.config.inpaintor)
 
         sequence = sequence.clone()
-        meshes_total = {}
+        images_total = {}
         for i in range(self.config.max_iterations):
-            meshes = self.extractor(sequence, instance2semantic)
-            print(colored(f'Iteration {i} extracted {len(meshes)} meshes', 'green'))
-            if len(meshes) == 0:
+            images = extractor(sequence, instance2semantic)
+            print(colored(f'Iteration {i} extracted {len(images)} mesh image crops', 'green'))
+            if len(images) == 0:
                 break
-            sequence = self.inpainter(sequence, meshes.keys())
-            meshes_total.update(meshes)
+            sequence = inpainter(sequence, images.keys())
+            images_total.update(meshes)
+        exit()
+
+        # Create after extraction/inpainting to save GPU memory
+        generator = ModelInstantMesh(self.config.generator)
+        meshes_total = {}
+        for label, image in images_total.items():
+            print(colored(f'Converting label {label} to mesh', 'green'))
+            mesh = generator(image)
+            mesh.export(f'tmp/mesh_{label}.obj')
+            meshes_total[label] = mesh
         return meshes_total
 
 
@@ -254,42 +243,58 @@ if __name__ == '__main__':
         save_dir='/home/gtangg12/data/scenefactor/replica-vmap', 
         name='room_0',
     )
-    sequence = reader.read(slice=(0, 1, 250), override=True)
-    Image.fromarray(sequence.images[0]).save('tmp/input.png')
+    sequence = reader.read(slice=(0, -1, 200), override=True)
 
     instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
 
-    extractor_config = OmegaConf.create({
-        'model': {
-            'script_path': 'third_party/InstantMesh/run.py',
-            'model_config_path': 'configs/instant-mesh-large.yaml',
-            'image_path': 'examples/input.png',
-            'tmesh_path': 'outputs/instant-mesh-large/meshes/input.obj'
-        },
+    extractor_config = {
         'score_expand_mult': 1.25,
         'score_hole_area_threshold': 128,
-        'score_bbox_min_area': 1024,
+        'score_bbox_min_area': 512,
         'score_bbox_occupancy_threshold': 0.6,
         'score_bbox_overlap_threshold': 64,
-        'cache_dir': reader.save_dir / 'sequence_factorization_extraction' 
-    })
-    inpainter_config = OmegaConf.create({
+        'cache_dir': reader.save_dir / 'sequence_factorization_extraction'
+    }
+    inpainter_config = {
         'model_inpainter': {
             'checkpoint': '/home/gtangg12/scenefactor/checkpoints/big-lama'
         },
         'model_segmenter': {
-            'checkpoint': '/home/gtangg12/scenefactor/checkpoints/sam_vit_h_4b8939.pth', #'/home/gtangg12/scenefactor/checkpoints/sam2_hiera_large.pt',
-            'model_config': 'sam2_hiera_l.yaml',
-            'mode': 'auto',
-            'min_area': 1024,
-            'engine_config': {}
+            'ram': {
+                'checkpoint': '/home/gtangg12/scenefactor/checkpoints/ram_plus_swin_large_14m.pth'
+            },
+            'grounding_dino': {
+                'checkpoint'       : '/home/gtangg12/scenefactor/checkpoints/groundingdino_swinb_cogcoor.pth',
+                'checkpoint_config': '/home/gtangg12/scenefactor/third_party/GroundingDino/groundingdino/config/GroundingDINO_SwinB_cfg.py',
+                'bbox_threshold': 0.25,
+                'text_threshold': 0.25,
+            },
+            'sam_pred': {
+                'checkpoint': '/home/gtangg12/scenefactor/checkpoints/sam_vit_h_4b8939.pth',
+                'mode': 'pred',
+                'engine_config': {}
+            },
+            'sam_auto': {
+                'checkpoint': '/home/gtangg12/scenefactor/checkpoints/sam_vit_h_4b8939.pth',
+                'mode': 'auto',
+                'engine_config': {}
+            },
+            'include_sam_auto': True,
+            'min_area': 256,
         },
         'bmask_min_area': 32,
         'cache_dir': reader.save_dir / 'sequence_factorization_inpainting'
-    })
+    }
+    generator_config = {
+        'script_path': 'third_party/InstantMesh/run.py',
+        'model_config_path': 'configs/instant-mesh-large.yaml',
+        'image_path': 'examples/input.png',
+        'tmesh_path': 'outputs/instant-mesh-large/meshes/input.obj'
+    }
     sequence_factorization = SequenceFactorization(OmegaConf.create({
         'extractor': extractor_config,
         'inpaintor': inpainter_config,
+        'generator': generator_config,
         'max_iterations': 1,
     }))
     meshes = sequence_factorization(sequence)

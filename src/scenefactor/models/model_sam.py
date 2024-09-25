@@ -8,6 +8,7 @@ import torch.nn as nn
 import torchvision
 from PIL import Image
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 '''
 from sam2.build_sam import build_sam2
@@ -70,9 +71,9 @@ class ModelSam:
             annotations = [{'segmentation': m, 'area': m.sum().item()} for m in annotations] # Automatic Mask Generator format
         annotations = sorted(annotations, key=lambda x: x['area'], reverse=True)
         
-        masks = np.stack([anno['segmentation'] for anno in annotations])
-        masks = rasterize_clean_masks(masks, min_area=self.config.get('min_area', 128))
-        return np.stack(masks) if masks is not None else None
+        bmasks = np.stack([anno['segmentation'] for anno in annotations])
+        bmasks = rasterize_clean_masks(bmasks, min_area=self.config.get('min_area', 128))
+        return np.stack(bmasks) if bmasks is not None else None
 
 
 class ModelSamGrounded:
@@ -89,24 +90,20 @@ class ModelSamGrounded:
         self.model_sam_pred = ModelSam(config.sam_pred, device=device)
         self.model_sam_auto = ModelSam(config.sam_auto, device=device)
 
-    def __call__(self, image: NumpyTensor['h', 'w', 3]) -> NumpyTensor['n', 'h', 'w']:
+    def __call__(self, image: NumpyTensor['h', 'w', 3], return_bboxes=False) -> NumpyTensor['n', 'h', 'w']:
         """
         """
         labels = self.model_ram(image)
-        bboxes_prompts, _ = self.model_grounding_dino(image, labels.split(' | '))
+        bboxes_prompts, _, _ = self.model_grounding_dino(image, labels.split(' | '))
 
         bmasks = []
-        bboxes = []
-        for bbox in bboxes_prompts:
-            bbox_xyxy = np.stack([bbox[1], bbox[0], bbox[3], bbox[2]])
-            mask = self.model_sam_pred(image, prompt={'box': bbox_xyxy, 'multimask_output': False})
+        for bbox in tqdm(bboxes_prompts):
+            mask = self.model_sam_pred(image, prompt={'box': bbox[[1, 0, 3, 2]], 'multimask_output': False}) # tlbr -> xyxy
             if mask is None:
                 continue
             bmasks.append(mask[0])
-            bboxes.append(bbox)
-        bmasks, bboxes = zip(*sorted(zip(bmasks, bboxes), key=lambda x: x[0].sum().item(), reverse=True))
+        bmasks = sorted(bmasks, key=lambda x: x[0].sum().item(), reverse=True)
         bmasks = np.stack(bmasks) # (n, H, W)
-        bboxes = np.stack(bboxes) # (n, 4)
 
         if self.config.include_sam_auto:
             bmasks_auto = self.model_sam_auto(image)
@@ -117,11 +114,16 @@ class ModelSamGrounded:
         bmasks = deduplicate_bmasks(bmasks)
         bmasks = rasterize_clean_masks(bmasks, min_area=self.config.get('min_area', 128))
         bboxes = torchvision.ops.masks_to_boxes(torch.from_numpy(bmasks)).numpy()
-        return bmasks.astype(bool), bboxes.astype(int)
+        bboxes = bboxes[:, [1, 0, 3, 2]] # xyxy -> tlbr
+        bmasks = bmasks.astype(bool)
+        bboxes = bboxes.astype(int)
+        if return_bboxes:
+            return bmasks, bboxes
+        return bmasks
 
 
 if __name__ == '__main__':
-    image = Image.open('tests/room.png').convert('RGB')
+    image = Image.open('tests/room3.png').convert('RGB')
     image = np.asarray(image)
     model = ModelSamGrounded(OmegaConf.create({
         'ram': {
@@ -144,8 +146,9 @@ if __name__ == '__main__':
             'engine_config': {}
         },
         'include_sam_auto': True,
-        'min_area': 1024,
+        'min_area': 256,
     }))
-    bmasks, bboxes = model(image)
+    bmasks, bboxes = model(image, return_bboxes=True)
     print(bmasks.shape)
     colormap_bmasks(bmasks, image).save('tests/sam_grounded_cmask.png')
+    colormap_bboxes(bboxes, image).save('tests/sam_grounded_bboxes.png')

@@ -125,6 +125,15 @@ def remove_artifacts_cmask(mask: NumpyTensor['h', 'w'], mode: str, min_area=128)
     return mask_combined
 
 
+def connected_components(bmask: NumpyTensor['h', 'w'], return_background=False) -> NumpyTensor['n', 'h', 'w']:
+    """
+    """
+    regions = cv2.connectedComponents(bmask.astype(np.uint8), connectivity=8)[1]
+    if not return_background:
+        regions = decompose_cmask(regions)[1:] # ignore background
+    return regions
+
+
 def crop(image: NumpyTensor['h', 'w', 'c...'], bbox: BBox) -> NumpyTensor['h', 'w', 'c']:
     """
     """
@@ -175,6 +184,15 @@ def bbox_iou(bbox1: BBox, bbox2: BBox) -> float:
         return 0
     union = bbox_union(bbox1, bbox2)
     return bbox_area(intersection) / bbox_area(union)
+
+
+def bbox_overlap(bbox1: BBox, bbox2: BBox) -> float:
+    """
+    """
+    intersection = bbox_intersection(bbox1, bbox2)
+    if intersection is None:
+        return 0
+    return bbox_area(intersection) / bbox_area(bbox1)
 
 
 def compute_bbox(bmask: NumpyTensor['h', 'w']) -> BBox:
