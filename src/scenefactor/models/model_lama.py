@@ -57,7 +57,7 @@ class ModelLama:
     def __call__(
         self, 
         image: NumpyTensor['h', 'w', 3], 
-        bmask: NumpyTensor['h', 'w'], refine=False, blur=(5, 5)
+        bmask: NumpyTensor['h', 'w'], refine=False
     ) -> NumpyTensor['h', 'w', 3]:
         """
         """
@@ -75,7 +75,7 @@ class ModelLama:
             output = self.model(batch)[self.model_config.out_key]
         output = output[0].permute(1, 2, 0).detach().cpu().numpy()
         output = output[:H, :W]
-        output = np.clip(output * 255, 0, 255).astype('uint8')
+        output = np.clip(output * 255, 0, 255).astype(np.uint8)
         return output
 
 

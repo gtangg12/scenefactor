@@ -55,7 +55,7 @@ class ModelSam:
             'auto': SamAutomaticMaskGenerator, #SAM2AutomaticMaskGenerator,
         }[self.config.mode](self.model, **self.config.get('engine_config', {}))
     
-    def __call__(self, image: NumpyTensor['h', 'w', 3], prompt: dict=None) -> NumpyTensor['n', 'h', 'w']:
+    def __call__(self, image: NumpyTensor['h', 'w', 3], prompt: dict=None, same_image=False) -> NumpyTensor['n', 'h', 'w']:
         """
         For information on prompt format see:
         
@@ -66,7 +66,8 @@ class ModelSam:
         if self.config.mode == 'auto':
             annotations = self.engine.generate(image)
         else:
-            self.engine.set_image(image)
+            if not same_image:
+                self.engine.set_image(image)
             annotations = self.engine.predict(**prompt)[0]
             annotations = [{'segmentation': m, 'area': m.sum().item()} for m in annotations] # Automatic Mask Generator format
         annotations = sorted(annotations, key=lambda x: x['area'], reverse=True)
@@ -94,11 +95,12 @@ class ModelSamGrounded:
         """
         """
         labels = self.model_ram(image)
-        bboxes_prompts, _, _ = self.model_grounding_dino(image, labels.split(' | '))
+        prompt_bboxes, _, _ = self.model_grounding_dino(image, labels.split(' | '))
 
         bmasks = []
-        for bbox in tqdm(bboxes_prompts):
-            mask = self.model_sam_pred(image, prompt={'box': bbox[[1, 0, 3, 2]], 'multimask_output': False}) # tlbr -> xyxy
+        for i, bbox in enumerate(prompt_bboxes):
+            prompt = {'box': bbox[[1, 0, 3, 2]], 'multimask_output': False} # tlbr -> xyxy
+            mask = self.model_sam_pred(image, prompt, same_image=(i > 0))
             if mask is None:
                 continue
             bmasks.append(mask[0])

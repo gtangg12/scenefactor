@@ -5,11 +5,12 @@ import torch
 import numpy as np
 from PIL import Image
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 from groundingdino.util.inference import load_model, predict
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.utils.geom import BBox, bbox_intersection, bbox_area, bbox_overlap
+from scenefactor.utils.geom import BBox, bbox_area, bbox_overlap
 
 
 def deduplicate_by_label(bboxes: NumpyTensor['n', 4], logits: NumpyTensor['n'], labels: list[str]):
