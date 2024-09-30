@@ -134,14 +134,16 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         def read_semantic_info() -> dict[int, dict]:
             """
             """
-            filename = f'{self.base_dir}/{self.name}/habitat/info_preseg_semantic.json'
-            semantic_info = json.load(open(filename, 'r'))['classes']
-            semantic_classes_things = self.metadata.pop('semantic_classes_things')
-            return {
-                data['id']: \
-                    {'name': data['name'], 'class': 'thing' if data['name'] in semantic_classes_things else 'stuff'}
+            things = self.metadata.pop('semantic_classes_things')
+            with open(self.base_dir / self.name / 'habitat/info_preseg_semantic.json', 'r') as f:
+                semantic_info = json.load(f)['classes']
+            semantic_info = {
+                data['id']: {'name': data['name'], 'class': 'thing' if data['name'] in things else 'stuff'}
                 for data in semantic_info
             }
+            unknown = max(semantic_info.keys()) + 1
+            semantic_info[unknown] = {'name': 'unknown', 'class': 'thing'}
+            return semantic_info, unknown
         
         image_filenames = read_filenames('rgb/*.png')
         depth_filenames = read_filenames('depth/*.png')
@@ -150,7 +152,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         
         poses = read_poses()
 
-        self.metadata['semantic_info'] = read_semantic_info()
+        self.metadata['semantic_info'], semantic_label_unknown = read_semantic_info()
         
         sequence = FrameSequence(
             poses=poses,
@@ -160,6 +162,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
             imasks=np.array([self.load_imask(f, resize) for f in imask_filenames]),
             metadata=self.metadata
         )
+        sequence.smasks[sequence.smasks == 0] = semantic_label_unknown # replica labels unknown semantic class as 0
         save_sequence(self.save_dir, sequence)
         return sequence
 

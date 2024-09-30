@@ -55,7 +55,9 @@ class ModelSam:
             'auto': SamAutomaticMaskGenerator, #SAM2AutomaticMaskGenerator,
         }[self.config.mode](self.model, **self.config.get('engine_config', {}))
     
-    def __call__(self, image: NumpyTensor['h', 'w', 3], prompt: dict=None, same_image=False) -> NumpyTensor['n', 'h', 'w']:
+    def __call__(
+        self, image: NumpyTensor['h', 'w', 3], prompt: dict=None, same_image=False, dialate=None
+    ) -> NumpyTensor['n', 'h', 'w']:
         """
         For information on prompt format see:
         
@@ -74,7 +76,11 @@ class ModelSam:
         
         bmasks = np.stack([anno['segmentation'] for anno in annotations])
         bmasks = rasterize_clean_masks(bmasks, min_area=self.config.get('min_area', 128))
-        return np.stack(bmasks) if bmasks is not None else None
+        if bmasks is None:
+            return None
+        if dialate is not None:
+            bmasks = [cv2.dilate(mask.astype(np.uint8), dialate).astype(bool) for mask in bmasks]
+        return np.stack(bmasks)
 
 
 class ModelSamGrounded:
@@ -91,7 +97,7 @@ class ModelSamGrounded:
         self.model_sam_pred = ModelSam(config.sam_pred, device=device)
         self.model_sam_auto = ModelSam(config.sam_auto, device=device)
 
-    def __call__(self, image: NumpyTensor['h', 'w', 3], return_bboxes=False) -> NumpyTensor['n', 'h', 'w']:
+    def __call__(self, image: NumpyTensor['h', 'w', 3], return_bboxes=False, dialate=None) -> NumpyTensor['n', 'h', 'w']:
         """
         """
         labels = self.model_ram(image)
