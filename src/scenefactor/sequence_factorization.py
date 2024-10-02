@@ -48,9 +48,6 @@ class SequenceExtraction:
             bbox_expanded      = resize_bbox(sequence_bboxes[label][index], mult=self.config.score_expand_mult)
             bbox_expanded_test = resize_bbox(bbox_expanded                , mult=self.config.score_expand_mult) # check bbox should be larger than expanded bbox to avoid (literal) edge cases
 
-            if iteration == 2 and label == 54:
-                print("KJAGSFA")
-
             # Condition 1: valid bbox
             if not bbox_check_bounds(bbox_expanded_test, *bmask.shape): 
                 return 0, None
@@ -60,18 +57,12 @@ class SequenceExtraction:
             if bbox_area(bbox) < self.config.score_bbox_min_area:
                 return 0, None
             
-            if iteration == 2 and label == 54:
-                print("KJAGSFA")
-            
             # Condition 2: no holes due to occlusions
             holes = compute_holes(bmask)
             for _, area in holes:
                 if area < self.config.score_hole_area_threshold:
                     continue
                 return 0, None
-            
-            if iteration == 2 and label == 54:
-                print("KJAGSFA")
 
             # Condition 3: handle non-hole occlusion cases
             for label_other in sequence_bmasks:
@@ -81,9 +72,7 @@ class SequenceExtraction:
                     continue
                 # test bmask overlap
                 bmask_other = sequence_bmasks[label_other][index]
-                intersection = \
-                    dialate_bmask(bmask      , np.ones((5, 5))) & \
-                    dialate_bmask(bmask_other, np.ones((5, 5)))
+                intersection = dialate_bmask(bmask, 5) & dialate_bmask(bmask_other, 5)
                 if not np.any(intersection):
                     continue
                 # test occupancy in bbox intersection
@@ -109,8 +98,6 @@ class SequenceExtraction:
         def process(label: int) -> Trimesh | None:
             """
             """
-            if iteration == 2 and label == 54:
-                print(label in sequence_bmasks)
             sequence_labels = sequence_bmasks.keys()
             if label not in sequence_labels:
                 return None
@@ -130,15 +117,7 @@ class SequenceExtraction:
             colormap_image(max_image).save(f'tmp/image_view_label_{label}_iter_{iteration}_index_{max_index}.png')
             return max_image
 
-        #for index, image in enumerate(sequence.images):
-        #    colormap_image(image).save(f'tmp/image_{index}.png')
         labels = np.unique(sequence.imasks)
-        print(labels)
-        if iteration == 2:
-            for label in labels:
-                if label == 54 or label == 87:
-                    print(label)
-                    print(sequence.metadata['semantic_info'][instance2semantic.get(label, 0)])
         images = {}
         for label in labels:
             if label == 0:
@@ -173,12 +152,12 @@ class SequenceInpainting:
         ) -> int:
             """
             """
-            bmask_label = dialate_bmask(bmask_label, np.ones((3, 3)))
+            bmask_label = dialate_bmask(bmask_label, 3)
             intersection = bmask_input & bmask_label
             if not np.any(intersection):
                 return
 
-            labels_mask = (~bmask_input & bmask_label) & dialate_bmask(intersection, np.ones((radius, radius)))
+            labels_mask = (~bmask_input & bmask_label) & dialate_bmask(intersection, radius)
             labels, counts = np.unique(imask_input[labels_mask], return_counts=True)
             counts = counts[labels != 0] # ignore labels to be inpainted and dead labels
             labels = labels[labels != 0]
@@ -186,20 +165,51 @@ class SequenceInpainting:
                 return 0 # dead label that will result in occluded object not being activated from this frame
             imask_paint[intersection] = labels[np.argmax(counts)]
 
+        def compute_inpaint_radius(
+            bmask: NumpyTensor['h', 'w'], 
+            imask: NumpyTensor['h', 'w'], ratio: float, clip_min=15, clip_max=75, bound_iterations=20, bound_threshold=5
+        ) -> int:
+            """
+            """
+            # assume bmask is a circle: r = sqrt(VOL / pi)(sqrt(c) - 1)
+            assert ratio > 1
+            radius = int(np.sqrt(np.sum(bmask) / np.pi * (ratio - 1)))
+            radius = int(np.clip(radius, clip_min, clip_max))
+
+            # ensure dialation doesn't overpaint non adjacent regions
+            num_labels = len(np.unique(imask[dialate_bmask(bmask, clip_min)]))
+            lo = 0
+            hi = radius
+            for _ in range(bound_iterations):
+                mid = (lo + hi) // 2
+                num_labels_current = len(np.unique(imask[dialate_bmask(bmask, mid)]))
+                if num_labels_current > num_labels:
+                    hi = mid
+                else:
+                    lo = mid
+                if hi - lo < bound_threshold:
+                    break
+            radius = min(radius, lo)
+            return radius
+
         def inpaint(index: int, downsample=2, radius=15):
             """
             """
-            bmask = np.zeros_like(sequence.imasks[index])
-            for label in labels_to_inpaint:
-                bmask |= sequence.imasks[index] == label
-            if not np.any(bmask):
-                return
             image = np.array(sequence.images[index])
             imask = np.array(sequence.imasks[index])
+            
+            bmask = np.zeros_like(sequence.imasks[index])
+            for label in labels_to_inpaint:
+                bmask_label = sequence.imasks[index] == label
+                bmask_label = dialate_bmask(bmask_label, compute_inpaint_radius(bmask_label, imask, ratio=1.5))
+                bmask |= bmask_label
+            if not np.any(bmask):
+                return
+            
+            imask[bmask] = -1 # remove labels to be inpainted
             imask = imask.astype(np.uint8)
             bmask = bmask.astype(np.uint8)
-            bmask = cv2.dilate(bmask, np.ones((radius, radius), np.uint8), iterations=1) # dialate to remove boundary artifacts
-            imask[bmask] = -1 # remove labels to be inpainted
+            #bmask = cv2.dilate(bmask, np.ones((radius, radius), np.uint8), iterations=1) # dialate to remove boundary artifacts
 
             # Downsample inputs for faster processing
             H, W = image.shape[:2]
@@ -209,7 +219,7 @@ class SequenceInpainting:
 
             # Compute RGB inpainting and SAM masks
             image_paint = self.model_inpainter(image_input, bmask_input)
-            bmasks_sam  = self.model_segmenter(image_paint, dialate=np.ones((5, 5)))
+            bmasks_sam  = self.model_segmenter(image_paint, dialate=5)
 
             # Use SAM masks for instance mask inpainting
             imask_paint = np.array(imask_input)
@@ -235,6 +245,7 @@ class SequenceInpainting:
             colormap_image(sequence_updated.images[index]).save(f'tmp/image_paint_iter_{iteration}_index_{index}.png')
             colormap_cmask(sequence_updated.imasks[index]).save(f'tmp/imask_paint_iter_{iteration}_index_{index}.png')
             colormap_bmasks(bmasks_sam).save(f'tmp/bmasks_sam_iter_{iteration}_index_{index}.png')
+            colormap_bmask(bmask).save(f'tmp/bmask_iter_{iteration}_index_{index}.png')
 
         for i in tqdm(range(len(sequence))):
             inpaint(i)
@@ -272,8 +283,6 @@ class SequenceFactorization:
                 break
             sequence = inpainter(sequence, images.keys(), iteration=i)
             images_total[i], sequences_total[i] = images, sequence.clone()
-            if i == 2:
-                exit()
         exit()
 
         # Create after extraction/inpainting to save GPU memory
@@ -348,6 +357,11 @@ if __name__ == '__main__':
         'generator': generator_config,
         'max_iterations': 10,
     }))
+
+    if os.path.exists('tmp'):
+        import shutil
+        shutil.rmtree('tmp')
+    os.makedirs('tmp')
     meshes = sequence_factorization(sequence)
 
 

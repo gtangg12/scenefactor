@@ -44,11 +44,11 @@ def compute_sequence_bmasks_bboxes(sequence: FrameSequence, instance2semantic: d
     return bmasks, bboxes
 
 
-def dialate_bmask(bmask: NumpyTensor['h', 'w'], kernel: NumpyTensor['k1', 'k2']) -> NumpyTensor['h', 'w']:
+def dialate_bmask(bmask: NumpyTensor['h', 'w'], radius) -> NumpyTensor['h', 'w']:
     """
     """
     bmask = bmask.astype(np.uint8)
-    bmask = cv2.dilate(bmask, kernel, iterations=1)
+    bmask = cv2.dilate(bmask, np.ones((radius, radius)), iterations=1)
     return bmask.astype(bool)
 
 

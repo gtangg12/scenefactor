@@ -5,8 +5,7 @@ import clip
 import torch
 from PIL import Image
 
-from scenefactor.data.common import NumpyTensor, TorchTensor
-from scenefactor.models.transforms import transform_imagenet
+from scenefactor.data.common import NumpyTensor
 
 
 class Clip:
