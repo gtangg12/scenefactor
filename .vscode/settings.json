@@ -1,6 +1,8 @@
 {
     "python.analysis.extraPaths": [
         "./third_party/segment-anything",
-        "./third_party/segment-anything-2"
+        "./third_party/segment-anything-2",
+        "./third_party/lama",
+        "./third_party/PAL4Inpaint"
     ]
 }

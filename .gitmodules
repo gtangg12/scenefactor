@@ -19,6 +19,3 @@
 [submodule "third_party/FastSAM"]
 	path = third_party/FastSAM
 	url = git@github.com:CASIA-IVA-Lab/FastSAM.git
-[submodule "third_party/PAL4Inpaint"]
-	path = third_party/PAL4Inpaint
-	url = https://github.com/owenzlz/PAL4Inpaint.git
