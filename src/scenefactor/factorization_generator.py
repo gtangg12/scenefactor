@@ -3,7 +3,7 @@ from trimesh.base import Trimesh
 
 from scenefactor.models import ModelClip, ModelInstantMesh
 from scenefactor.utils.geom import *
-from scenefactor.utils.colormaps import *
+from scenefactor.utils.visualize import *
 from scenefactor.utils.tensor import untile
 from scenefactor.factorization_utils import *
 
@@ -26,7 +26,7 @@ def metric_multiview_quality(
 class SequenceGenerator:
     """
     """
-    def __init__(self, config: OmegaConf, cache: Path | str):
+    def __init__(self, config: OmegaConf):
         """
         """
         self.config = config
@@ -34,7 +34,6 @@ class SequenceGenerator:
         
         self.model_clip = ModelClip(config.model_clip)
 
-    @cache_module
     def __call__(self, images: dict, instance2semantic: dict) -> dict[int, Trimesh]:
         """
         """
@@ -56,7 +55,7 @@ class SequenceGenerator:
                 for crop, _, index in candidates:
                     tmesh, mview = self.model_generator(crop, return_multiview=True)
                     score = metric_multiview_quality(self.model_clip, mview, label2caption(label))
-                    colormap_tiles(mview, r=3, c=2).save(f'tmp/mview_iter_{iteration}_label_{label}_index_{index}_score_{score:2f}.png')
+                    visualize_tiles(mview, r=3, c=2).save(f'tmp/mview_iter_{iteration}_label_{label}_index_{index}_score_{score:2f}.png')
                     tmesh.export(f'tmp/mesh_iter_{iteration}_label_{label}_index_{index}_score_{score:2f}.obj')
                     if score > best_score:
                         best_score = score
@@ -65,12 +64,12 @@ class SequenceGenerator:
                         best_index = index
                 meshes[label] = best_tmesh
                 meshes[label].export(f'tmp/mesh_iter_{iteration}_label_{label}_index_{best_index}.obj')
-                colormap_image(best_input).save(f'tmp/image_iter_{iteration}_label_{label}_index_{index}.png')
+                visualize_image(best_input).save(f'tmp/image_iter_{iteration}_label_{label}_index_{index}.png')
                 '''
                 candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
                 tmesh, mview = self.model_generator(candidates[0][0], return_multiview=True)
-                colormap_image(candidates[0][0]).save(f'tmp/image_iter_{iteration}_label_{label}_index_{candidates[0][2]}.png')
-                colormap_tiles(mview, r=3, c=2) .save(f'tmp/mview_iter_{iteration}_label_{label}_index_{candidates[0][2]}.png')
+                visualize_image(candidates[0][0]).save(f'tmp/image_iter_{iteration}_label_{label}_index_{candidates[0][2]}.png')
+                visualize_tiles(mview, r=3, c=2) .save(f'tmp/mview_iter_{iteration}_label_{label}_index_{candidates[0][2]}.png')
                 tmesh.export(f'tmp/mesh_iter_{iteration}_label_{label}_index_{candidates[0][2]}.obj')
                 meshes[label] = tmesh
         return meshes

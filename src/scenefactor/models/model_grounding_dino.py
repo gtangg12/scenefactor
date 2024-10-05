@@ -115,6 +115,6 @@ if __name__ == '__main__':
     #bboxes, logits, labels = model(image, ['large, wooden drawer with objects on top', 'white lampshade near wall', 'ottoman chair', 'brown tabletop', 'jar on top of wooden drawer', 'books', 'plate'])
     #bboxes, logits, labels = model(image, ['flower vase', 'white lampshade', 'sofa', 'pillow'])
     bboxes, logits, labels = model(image, ['drawer'])
-    from scenefactor.utils.colormaps import colormap_bboxes
-    colormap_bboxes(bboxes, image).save('/home/gtangg12/scenefactor/tests/test_grounding_dino.png')
+    from scenefactor.utils.visualize import visualize_bboxes
+    visualize_bboxes(bboxes, image).save('/home/gtangg12/scenefactor/tests/test_grounding_dino.png')
     print(labels)

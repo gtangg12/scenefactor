@@ -20,7 +20,7 @@ from segment_anything import SamAutomaticMaskGenerator, SamPredictor, sam_model_
 from scenefactor.data.common import NumpyTensor
 from scenefactor.models import ModelRam, ModelGroundingDino
 from scenefactor.utils.geom import *
-from scenefactor.utils.colormaps import *
+from scenefactor.utils.visualize import *
 
 
 def rasterize_clean_masks(bmasks: NumpyTensor['n', 'h', 'w'], min_area=128) -> NumpyTensor['n', 'h', 'w'] | None:
@@ -158,5 +158,5 @@ if __name__ == '__main__':
     }))
     bmasks, bboxes = model(image, return_bboxes=True)
     print(bmasks.shape)
-    colormap_bmasks(bmasks, image).save('tests/sam_grounded_cmask.png')
-    colormap_bboxes(bboxes, image).save('tests/sam_grounded_bboxes.png')
+    visualize_bmasks(bmasks, image).save('tests/sam_grounded_cmask.png')
+    visualize_bboxes(bboxes, image).save('tests/sam_grounded_bboxes.png')

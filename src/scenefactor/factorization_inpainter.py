@@ -5,7 +5,7 @@ from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence
 from scenefactor.models import ModelLama, ModelSamGrounded
 from scenefactor.utils.geom import *
-from scenefactor.utils.colormaps import *
+from scenefactor.utils.visualize import *
 from scenefactor.factorization_utils import *
 
 
@@ -123,10 +123,10 @@ class SequenceInpainter:
             # Write to sequence
             sequence_updated.images[index] = image_paint
             sequence_updated.imasks[index] = imask_paint
-            colormap_image(sequence_updated.images[index]).save(f'tmp/image_paint_iter_{iteration}_index_{index}.png')
-            colormap_cmask(sequence_updated.imasks[index]).save(f'tmp/imask_paint_iter_{iteration}_index_{index}.png')
-            colormap_bmasks(bmasks_sam).save(f'tmp/bmasks_sam_iter_{iteration}_index_{index}.png')
-            colormap_bmask(bmask).save(f'tmp/bmask_iter_{iteration}_index_{index}.png')
+            visualize_image(sequence_updated.images[index]).save(f'tmp/image_paint_iter_{iteration}_index_{index}.png')
+            visualize_cmask(sequence_updated.imasks[index]).save(f'tmp/imask_paint_iter_{iteration}_index_{index}.png')
+            visualize_bmasks(bmasks_sam).save(f'tmp/bmasks_sam_iter_{iteration}_index_{index}.png')
+            visualize_bmask(bmask).save(f'tmp/bmask_iter_{iteration}_index_{index}.png')
 
         for i in tqdm(range(len(sequence))):
             inpaint(i)

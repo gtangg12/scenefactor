@@ -13,13 +13,13 @@ GREEN = (  0, 255,   0)
 BLUE  = (  0,   0, 255)
 
 
-def colormap_image(image: NumpyTensor['h', 'w', 3]) -> Image.Image:
+def visualize_image(image: NumpyTensor['h', 'w', 3]) -> Image.Image:
     """
     """
     return Image.fromarray(image.astype(np.uint8))
 
 
-def colormap_tiles(tiles: list[NumpyTensor['h', 'w', 3]], r: int, c: int) -> Image.Image:
+def visualize_tiles(tiles: list[NumpyTensor['h', 'w', 3]], r: int, c: int) -> Image.Image:
     """
     """
     h, w = tiles[0].shape[:2]
@@ -31,7 +31,7 @@ def colormap_tiles(tiles: list[NumpyTensor['h', 'w', 3]], r: int, c: int) -> Ima
     return Image.fromarray(image.astype(np.uint8))
 
 
-def colormap_depth(depth: NumpyTensor['h', 'w']) -> Image.Image:
+def visualize_depth(depth: NumpyTensor['h', 'w']) -> Image.Image:
     """
     """
     depth = (depth - np.min(depth)) / (np.max(depth) - np.min(depth))
@@ -40,7 +40,7 @@ def colormap_depth(depth: NumpyTensor['h', 'w']) -> Image.Image:
     return Image.fromarray((depth * 255).astype(np.uint8))
 
 
-def colormap_cmask(
+def visualize_cmask(
     cmask: NumpyTensor['h', 'w'], 
     image: NumpyTensor['h', 'w' ,3]=None, background=WHITE, foreground=None, blend=0.25
 ) -> Image.Image:
@@ -58,23 +58,23 @@ def colormap_cmask(
     return Image.fromarray(image_blend)
 
 
-def colormap_bmask(bmask: NumpyTensor['h', 'w']) -> Image.Image:
+def visualize_bmask(bmask: NumpyTensor['h', 'w']) -> Image.Image:
     """
     """
-    return colormap_cmask(bmask, background=BLACK, foreground=WHITE)
+    return visualize_cmask(bmask, background=BLACK, foreground=WHITE)
 
 
-def colormap_bmasks(
+def visualize_bmasks(
     masks: NumpyTensor['n', 'h', 'w'], 
     image: NumpyTensor['h', 'w', 3]=None, background=WHITE, blend=0.25
 ) -> Image.Image:
     """
     """
     cmask = combine_bmasks(masks, sort=True)
-    return colormap_cmask(cmask, image, background=background, blend=blend)
+    return visualize_cmask(cmask, image, background=background, blend=blend)
 
 
-def colormap_bbox(bbox: BBox, image: NumpyTensor['h', 'w', 3], color=GREEN) -> Image.Image:
+def visualize_bbox(bbox: BBox, image: NumpyTensor['h', 'w', 3], color=GREEN) -> Image.Image:
     """
     """
     image_bbox = image.copy()
@@ -82,7 +82,7 @@ def colormap_bbox(bbox: BBox, image: NumpyTensor['h', 'w', 3], color=GREEN) -> I
     return Image.fromarray(image_bbox)
 
 
-def colormap_bboxes(bboxes: list[BBox], image: NumpyTensor['h', 'w', 3], color=GREEN) -> Image.Image:
+def visualize_bboxes(bboxes: list[BBox], image: NumpyTensor['h', 'w', 3], color=GREEN) -> Image.Image:
     """
     """
     image_bboxes = image.copy()

@@ -8,7 +8,7 @@ from pyrender.shader_program import ShaderProgramCache as DefaultShaderCache
 from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.utils.colormaps import colormap_depth
+from scenefactor.utils.visualize import visualize_depth
 
 
 DEFAULT_CAMERA_PARAMS = {'fov': 60, 'znear': 0.01, 'zfar': 16}
@@ -110,6 +110,6 @@ if __name__ == '__main__':
     os.makedirs(path, exist_ok=True)
     for i, renders in enumerate(outputs):
         image = Image.fromarray(renders['image'])
-        depth = colormap_depth(renders['depth'])
+        depth = visualize_depth(renders['depth'])
         image.save(f'{path}/image_{i}.png')
         depth.save(f'{path}/depth_{i}.png')
