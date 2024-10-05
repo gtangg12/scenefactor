@@ -1,3 +1,8 @@
+import pickle
+import os
+import shutil
+from pathlib import Path
+
 import cv2
 import numpy as np
 
@@ -70,3 +75,21 @@ def fill_background_holes(cmask: NumpyTensor['h', 'w'], max_area=4096, backgroun
             if hole_labels[np.argmax(hole_counts)] == background:
                 cmask_filled[hole] = label
     return cmask_filled
+
+
+def cache_module(func):
+    """
+    """
+    def decorator_function(module, *args, **kwargs):
+        """
+        """
+        assert hasattr(module, 'cache_path'), 'Cache path not defined for module.'
+        if module.cache.exists() and not module.cache_override:
+            return pickle.load(open(module.cache, 'rb'))
+        if module.cache.exists():
+            shutil.rmtree(module.cache)
+        os.makedirs(module.cache, exist_ok=True)
+        output = func(module, *args, **kwargs)
+        pickle.dump(output, open(module.cache, 'wb'))
+        return output
+    return decorator_function

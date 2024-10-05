@@ -64,59 +64,9 @@ if __name__ == '__main__':
 
     instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
 
-    extractor_config = {
-        'score_expand_mult': 1.25,
-        'score_hole_area_threshold': 128,
-        'score_bbox_min_area': 512,
-        'score_bbox_occupancy_threshold': 0.1,
-        'score_bbox_overlap_threshold': 64,
-        'score_threshold': 0.4,
-        'score_topk': 5,
-        'model_clip': {'name': 'ViT-B/32', 'temperature': 0.1},
-    }
-    inpainter_config = {
-        'model_inpainter': {
-            'checkpoint': '/home/gtangg12/scenefactor/checkpoints/big-lama'
-        },
-        'model_segmenter': {
-            'ram': {
-                'checkpoint': '/home/gtangg12/scenefactor/checkpoints/ram_plus_swin_large_14m.pth'
-            },
-            'grounding_dino': {
-                'checkpoint'       : '/home/gtangg12/scenefactor/checkpoints/groundingdino_swinb_cogcoor.pth',
-                'checkpoint_config': '/home/gtangg12/scenefactor/third_party/GroundingDino/groundingdino/config/GroundingDINO_SwinB_cfg.py',
-                'bbox_threshold': 0.25,
-                'text_threshold': 0.25,
-            },
-            'sam_pred': {
-                'checkpoint': '/home/gtangg12/scenefactor/checkpoints/sam_vit_h_4b8939.pth',
-                'mode': 'pred',
-                'engine_config': {}
-            },
-            'sam_auto': {
-                'checkpoint': '/home/gtangg12/scenefactor/checkpoints/sam_vit_h_4b8939.pth',
-                'mode': 'auto',
-                'engine_config': {}
-            },
-            'include_sam_auto': True,
-            'min_area': 256,
-        },
-    }
-    generator_config = {
-        'model_generator': {
-            'model_config': 'configs/instant-mesh-large.yaml',
-            'input_path': 'examples/input.png',
-            'tmesh_path': 'outputs/instant-mesh-large/meshes/input.obj'
-        },
-        'model_clip': {'name': 'ViT-B/32', 'temperature': 0.1},
-    }
-    sequence_factorization = SequenceFactorization(OmegaConf.create({
-        'extractor': extractor_config,
-        'inpainter': inpainter_config,
-        'generator': generator_config,
-        'max_iterations': 10,
-    }))
-
+    sequence_factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_replica_vmap.yaml')
+    sequence_factorization_config['cache'] = reader.save_dir / 'factorization'
+    sequence_factorization = SequenceFactorization(sequence_factorization_config)
     if os.path.exists('tmp'):
         import shutil
         shutil.rmtree('tmp')

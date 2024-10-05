@@ -26,7 +26,7 @@ def metric_multiview_quality(
 class SequenceGenerator:
     """
     """
-    def __init__(self, config: OmegaConf):
+    def __init__(self, config: OmegaConf, cache: Path | str):
         """
         """
         self.config = config
@@ -34,6 +34,7 @@ class SequenceGenerator:
         
         self.model_clip = ModelClip(config.model_clip)
 
+    @cache_module
     def __call__(self, images: dict, instance2semantic: dict) -> dict[int, Trimesh]:
         """
         """
