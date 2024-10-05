@@ -167,70 +167,26 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         return sequence
 
 
-class ScanNetFrameSequenceReader(FrameSequenceReader):
+class ScanNetPPFrameSequenceReader(FrameSequenceReader):
     """
     """
-    READER_CONFIG = CONFIGS_DIR / 'sequence_reader_scannet.yaml'
+    READER_CONFIG = CONFIGS_DIR / 'sequence_reader_scannet_pp.yaml'
 
-    def read(self, slice=(0, -1, 20), override=False) -> FrameSequence:
+    def __init__(
+        self, 
+        base_dir: Path | str, 
+        save_dir: Path | str, name: str
+    ):
         """
         """
-        data_dir = self.base_dir / self.name
-        save_dir = self.save_dir / self.name if self.save_dir is not None else None
-        if save_dir is not None and save_dir.exists() and not override:
-            return load_sequence(save_dir)
-        
-        def read_filenames(pattern: str) -> list[str]:
-            """
-            """
-            filenames = natsorted(glob(f'{data_dir}/{pattern}'))
-            filenames = filenames[slice[0]:slice[1]:slice[2]]
-            return filenames
+        super().__init__(base_dir, save_dir, name)
 
-        def read_poses() -> NumpyTensor['n', 4, 4]:
-            """
-            """
-            poses = []
-            for filename in read_filenames('pose/*.txt'):
-                with open(filename, 'r') as f:
-                    pose = np.loadtxt(f).reshape(4, 4)
-                poses.append(pose)
-            poses = np.stack(poses)
-            poses = poses[slice[0]:slice[1]:slice[2]]
-            poses = poses @ np.array(self.metadata['pose_axis_transform'])
-            return poses
-        
-        def read_semantic_info() -> dict[int, dict]:
-            """
-            """
-            semantic_classes_stuffs = set(self.metadata.pop('semantic_classes_stuffs'))
-            semantic_classes_things = set(self.metadata.pop('semantic_classes_things'))
-            return {
-                label: {'class': 'thing' if label in semantic_classes_things else 'stuff'}
-                for label in semantic_classes_stuffs + \
-                             semantic_classes_things
-            }
-    
-        image_filenames = read_filenames('color/*.jpg')
-        depth_filenames = read_filenames('depth/*.png')
-        smask_filenames = read_filenames('semantics/*.png')
-        imask_filenames = read_filenames('instance/*.png')
+        pass
 
-        poses = read_poses()
-
-        self.metadata['semantic_info'] = read_semantic_info()
-
-        sequence = FrameSequence(
-            poses=poses,
-            images=np.array([self.load_image(f) for f in image_filenames]),
-            depths=np.array([self.load_depth(f) for f in depth_filenames]),
-            smasks=np.array([self.load_smask(f) for f in smask_filenames]),
-            imasks=np.array([self.load_imask(f) for f in imask_filenames]),
-            metadata=self.metadata
-        )
-        if save_dir is not None:
-            save_sequence(save_dir, sequence)
-        return sequence
+    def read(self, slice=(0, -1, 20), resize: tuple[int, int]=None, override=False) -> FrameSequence:
+        """
+        """
+        pass
 
 
 if __name__ == '__main__':
