@@ -19,6 +19,18 @@ def colormap_image(image: NumpyTensor['h', 'w', 3]) -> Image.Image:
     return Image.fromarray(image.astype(np.uint8))
 
 
+def colormap_tiles(tiles: list[NumpyTensor['h', 'w', 3]], r: int, c: int) -> Image.Image:
+    """
+    """
+    h, w = tiles[0].shape[:2]
+    assert all(tile.shape[:2] == (h, w) for tile in tiles), 'tiles must have the same shape'
+    image = np.concatenate([
+        np.concatenate(tiles[cindex * c:(cindex + 1) * c], axis=1)
+        for cindex in range(r)
+    ], axis=0)
+    return Image.fromarray(image.astype(np.uint8))
+
+
 def colormap_depth(depth: NumpyTensor['h', 'w']) -> Image.Image:
     """
     """
