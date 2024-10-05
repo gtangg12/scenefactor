@@ -8,7 +8,7 @@ from scenefactor.data.common import NumpyTensor
 from scenefactor.utils.geom import homogeneous_transform, homogeneous_transform_handle_small, bounding_box_centroid
 
 
-def scene2mesh(scene: Scene, process=True) -> Trimesh:
+def scene2tmesh(scene: Scene, process=True) -> Trimesh:
     """
     Converts scene with multiple geometries into a single mesh with default coordinate convention.
     """
@@ -27,26 +27,26 @@ def scene2mesh(scene: Scene, process=True) -> Trimesh:
             # affecting face indices but not faces.shape
             data.append(Trimesh(vertices=vertices, faces=geom.faces, visual=geom.visual, process=process))
 
-        mesh = trimesh.util.concatenate(data)
-        mesh = Trimesh(vertices=mesh.vertices, faces=mesh.faces, visual=mesh.visual, process=process)
-    return mesh
+        tmesh = trimesh.util.concatenate(data)
+        tmesh = Trimesh(vertices=tmesh.vertices, faces=tmesh.faces, visual=tmesh.visual, process=process)
+    return tmesh
 
 
-def norm_mesh(mesh: Trimesh) -> Trimesh:
+def norm_tmesh(tmesh: Trimesh) -> Trimesh:
     """
-    Returns new mesh with vertices normalized to the bounding box [-1, 1].
+    Returns new tmesh with vertices normalized to the bounding box [-1, 1].
     """
-    mesh = mesh.copy()
-    centroid = bounding_box_centroid(mesh.vertices)
-    mesh.vertices -= centroid
-    mesh.vertices /= np.abs(mesh.vertices).max()
-    mesh.vertices *= (1 - 1e-3)
-    return mesh
+    tmesh = tmesh.copy()
+    centroid = bounding_box_centroid(tmesh.vertices)
+    tmesh.vertices -= centroid
+    tmesh.vertices /= np.abs(tmesh.vertices).max()
+    tmesh.vertices *= (1 - 1e-3)
+    return tmesh
 
 
-def read_mesh(filename: Path, norm=False, process=True, transform: NumpyTensor[4, 4]=None) -> Trimesh:
+def read_tmesh(filename: Path, norm=False, process=True, transform: NumpyTensor[4, 4]=None) -> Trimesh:
     """
-    Read mesh/convert a possible scene to mesh. 
+    Read tmesh/convert a possible scene to tmesh. 
     
     If conversion occurs, the returned mesh has only vertex and face data i.e. no texture information.
 
@@ -55,12 +55,12 @@ def read_mesh(filename: Path, norm=False, process=True, transform: NumpyTensor[4
     source = trimesh.load(filename)
 
     if isinstance(source, trimesh.Scene):
-        mesh = scene2mesh(source, process=process)
+        tmesh = scene2tmesh(source, process=process)
     else:
         assert(isinstance(source, trimesh.Trimesh))
-        mesh = source
+        tmesh = source
     if norm:
-        mesh = norm_mesh(mesh)
+        tmesh = norm_tmesh(tmesh)
     if transform is not None:
-        mesh.vertices = homogeneous_transform(transform, mesh.vertices)
-    return mesh
+        tmesh.vertices = homogeneous_transform(transform, tmesh.vertices)
+    return tmesh
