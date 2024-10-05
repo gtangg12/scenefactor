@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from torchvision import transforms
 from PIL import Image
 from omegaconf import OmegaConf
 
@@ -7,7 +8,7 @@ from ram import inference_ram_openset as inference
 from ram.models import ram_plus
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.models.transforms import transform_imagenet
+from scenefactor.models.transforms import transforms_imagenet
 
 
 class ModelRam:
@@ -21,7 +22,10 @@ class ModelRam:
         self.config = config
         self.device = device
 
-        self.transform = transform_imagenet(resize=self.RESIZE)
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms_imagenet(resize=self.RESIZE)
+        ])
         self.model = ram_plus(pretrained=config.checkpoint, image_size=self.RESIZE[0], vit='swin_l')
         self.model.to(device)
         self.model.eval()
@@ -29,7 +33,8 @@ class ModelRam:
     def __call__(self, image: NumpyTensor['h', 'w', 3]) -> list[str]:
         """
         """
-        return inference(self.transform(image).unsqueeze(0).to(self.device), self.model)
+        image = self.transform(image).unsqueeze(0).float().to(self.device)
+        return inference(image, self.model)
 
 
 if __name__ == '__main__':
