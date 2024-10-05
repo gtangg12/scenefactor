@@ -11,7 +11,6 @@ from omegaconf import OmegaConf
 from scenefactor.data.common import NumpyTensor
 from scenefactor.utils.tensor import tensor_to_image
 
-
 PATH = Path(__file__).parents[3] / 'third_party/lama'
 import sys
 sys.path.append(str(PATH))
