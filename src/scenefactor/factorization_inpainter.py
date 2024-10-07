@@ -73,7 +73,7 @@ class SequenceInpainter:
             radius = min(radius, lo)
             return radius
 
-        def inpaint(index: int, downsample=2, radius=15):
+        def inpaint(index: int, downsample=2):
             """
             """
             image = np.array(sequence.images[index])
@@ -100,16 +100,16 @@ class SequenceInpainter:
 
             # Compute RGB inpainting and SAM masks
             image_paint = self.model_inpainter(image_input, bmask_input)
-            bmasks_sam  = self.model_segmenter(image_paint, dialate=5)
+            bmask_model = self.model_segmenter(image_paint, dialate=5)
 
             # Use SAM masks for instance mask inpainting
             imask_paint = np.array(imask_input)
             imask_paint = imask_paint.astype(int)
             bmask_input = bmask_input.astype(bool)
-            for i, bmask_sam in enumerate(bmasks_sam):
+            for i, bmask_label in enumerate(bmask_model):
                 # predict separately for each sam bmask connected component for better locality
-                for j, bmask_label in enumerate(connected_components(bmask_sam)):
-                        predict_label(imask_input, bmask_input, imask_paint, bmask_label)
+                for j, bmask_component in enumerate(connected_components(bmask_label)):
+                        predict_label(imask_input, bmask_input, imask_paint, bmask_component)
             
             # Upsample to original size
             image_paint = cv2.resize(image_paint, (W, H))
@@ -123,10 +123,14 @@ class SequenceInpainter:
             # Write to sequence
             sequence_updated.images[index] = image_paint
             sequence_updated.imasks[index] = imask_paint
-            visualize_image(sequence_updated.images[index]).save(f'tmp/image_paint_iter_{iteration}_index_{index}.png')
-            visualize_cmask(sequence_updated.imasks[index]).save(f'tmp/imask_paint_iter_{iteration}_index_{index}.png')
-            visualize_bmasks(bmasks_sam).save(f'tmp/bmasks_sam_iter_{iteration}_index_{index}.png')
-            visualize_bmask(bmask).save(f'tmp/bmask_iter_{iteration}_index_{index}.png')
+            
+            if self.config.visualize:
+                visualizations_path = f'{self.config.cache}/visualizations'
+                visaulizations_tail = f'iteration_{iteration}_index_{index}'
+                visualize_image (image_paint).save(f'{visualizations_path}/image_paint_{visaulizations_tail}.png')
+                visualize_cmask (imask_paint).save(f'{visualizations_path}/imask_paint_{visaulizations_tail}.png')
+                visualize_bmask (bmask_input).save(f'{visualizations_path}/bmask_input_{visaulizations_tail}.png')
+                visualize_bmasks(bmask_model).save(f'{visualizations_path}/bmask_model_{visaulizations_tail}.png')
 
         for i in tqdm(range(len(sequence))):
             inpaint(i)

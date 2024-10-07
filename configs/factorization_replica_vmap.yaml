@@ -1,5 +1,5 @@
 extractor:
-  score_expand_mult: 1.25
+  score_bbox_expand_mult: 1.25
   score_hole_area_threshold: 128
   score_bbox_min_area: 512
   score_bbox_occupancy_threshold: 0.1
@@ -9,6 +9,8 @@ extractor:
   model_clip:
     name: ViT-B/32
     temperature: 0.1
+  overwrite: True
+  visualize: True
 
 inpainter:
   model_inpainter:
@@ -31,6 +33,8 @@ inpainter:
       engine_config: {}
     include_sam_auto: True
     min_area: 256
+    overwrite: True
+  visualize: True
 
 generator:
   model_generator:
@@ -40,5 +44,7 @@ generator:
     model_clip:
       name: ViT-B/32
       temperature: 0.1
+  overwrite: True
+  visualize: True
 
 max_iterations: 10

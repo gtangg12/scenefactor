@@ -8,7 +8,7 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.data.mesh import read_tmesh
+from scenefactor.utils.mesh import read_tmesh
 from scenefactor.utils.tensor import read_image, untile
 
 PATH = Path(__file__).parents[3] / 'third_party/InstantMesh'

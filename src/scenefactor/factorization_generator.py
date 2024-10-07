@@ -31,7 +31,6 @@ class SequenceGenerator:
         """
         self.config = config
         self.model_generator = ModelInstantMesh(config.model_generator)
-        
         self.model_clip = ModelClip(config.model_clip)
 
     def __call__(self, images: dict, instance2semantic: dict) -> dict[int, Trimesh]:
@@ -67,9 +66,14 @@ class SequenceGenerator:
                 visualize_image(best_input).save(f'tmp/image_iter_{iteration}_label_{label}_index_{index}.png')
                 '''
                 candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
-                tmesh, mview = self.model_generator(candidates[0][0], return_multiview=True)
-                visualize_image(candidates[0][0]).save(f'tmp/image_iter_{iteration}_label_{label}_index_{candidates[0][2]}.png')
-                visualize_tiles(mview, r=3, c=2) .save(f'tmp/mview_iter_{iteration}_label_{label}_index_{candidates[0][2]}.png')
-                tmesh.export(f'tmp/mesh_iter_{iteration}_label_{label}_index_{candidates[0][2]}.obj')
+                for crop, score, index in candidates:
+                    tmesh, mview = self.model_generator(crop, return_multiview=True)
+                    if self.config.visualize:
+                        visualizations_path = f'{self.config.cache}/visualizations'
+                        visualizations_tail = f'label_{label}_iter_{iteration}_index_{index}_score_{score:2f}'
+                        visualize_image(crop)           .save(f'{visualizations_path}/image_{visualizations_tail}.png')
+                        visualize_tiles(mview, r=3, c=2).save(f'{visualizations_path}/mview_{visualizations_tail}.png')
+                        tmesh                         .export(f'{visualizations_path}/tmesh_{visualizations_tail}.obj')
+                    break
                 meshes[label] = tmesh
         return meshes

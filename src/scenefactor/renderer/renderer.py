@@ -93,7 +93,7 @@ def render_multiview(
 if __name__ == '__main__':
     import os
     from PIL import Image
-    from scenefactor.data.mesh import read_mesh
+    from scenefactor.utils.mesh import read_mesh
     from scenefactor.utils.camera_generation import sample_view_matrices_method, sample_view_matrices_spherical
 
     mesh = read_mesh('tests/instant_mesh.obj', norm=True, transform=np.array([

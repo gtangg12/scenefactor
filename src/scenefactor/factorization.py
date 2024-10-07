@@ -13,13 +13,25 @@ from scenefactor.factorization_generator import SequenceGenerator
 from scenefactor.factorization_utils import *
 
 
+def reset_cache(module):
+    """
+    """
+    if module.config.cache.exists():
+        shutil.rmtree(module.config.cache)
+    os.makedirs(module.config.cache                 , exist_ok=True)
+    os.makedirs(module.config.cache/'visualizations', exist_ok=True)
+
+
 class SequenceFactorization:
     """
     """
     def __init__(self, config: OmegaConf):
         """
         """
-        self.config = config
+        self.config = OmegaConf.create(config)
+        self.config.extractor.cache = Path(self.config.cache) / 'extractor'
+        self.config.inpainter.cache = Path(self.config.cache) / 'inpainter'
+        self.config.generator.cache = Path(self.config.cache) / 'generator'
 
     def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
         """
@@ -34,6 +46,8 @@ class SequenceFactorization:
         
         extractor = SequenceExtractor(self.config.extractor)
         inpainter = SequenceInpainter(self.config.inpainter)
+        reset_cache(extractor)
+        reset_cache(inpainter)
 
         images_total, sequences_total = defaultdict(dict), {0: sequence.clone()}
         for i in range(self.config.max_iterations):
@@ -48,29 +62,28 @@ class SequenceFactorization:
         torch.cuda.empty_cache() # Apparently this is necessary (unlike in InstantMesh/run.py)
         
         generator = SequenceGenerator(self.config.generator)
+        reset_cache(generator)
+
         meshes_total = generator(images_total, instance2semantic)
         return meshes_total
 
 
 if __name__ == '__main__':
-    from scenefactor.data.sequence_reader import ReplicaVMapFrameSequenceReader
+    from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
 
     reader = ReplicaVMapFrameSequenceReader(
         base_dir='/home/gtangg12/data/replica-vmap', 
         save_dir='/home/gtangg12/data/scenefactor/replica-vmap', 
         name='room_0',
     )
-    sequence = reader.read(slice=(0, -1, 200), override=True)
+    sequence = reader.read(slice=(0, -1, 50))
 
     instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
 
     sequence_factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_replica_vmap.yaml')
     sequence_factorization_config['cache'] = reader.save_dir / 'factorization'
     sequence_factorization = SequenceFactorization(sequence_factorization_config)
-    if os.path.exists('tmp'):
-        import shutil
-        shutil.rmtree('tmp')
-    os.makedirs('tmp')
+
     meshes = sequence_factorization(sequence)
 
 

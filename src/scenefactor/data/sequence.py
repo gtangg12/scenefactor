@@ -119,11 +119,16 @@ def load_sequence(filename: Path | str) -> FrameSequence:
     return sequence
 
 
-def image2sequence(image: NumpyTensor['h', 'w', 3], pose=np.eye(4), metadata=None) -> FrameSequence:
+def save_sequence_nerfstudio(filename: Path | str, sequence: FrameSequence) -> None:
     """
-    Creates a FrameSequence object from a single image.
     """
-    return FrameSequence(images=image[None, ...], poses=pose[None, ...], metadata=metadata)
+    pass
+
+
+def load_sequence_nerfstudio(filename: Path | str) -> FrameSequence:
+    """
+    """
+    pass
 
 
 def compute_instance2semantic_label_mapping(
