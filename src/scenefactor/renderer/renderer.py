@@ -8,10 +8,9 @@ from pyrender.shader_program import ShaderProgramCache as DefaultShaderCache
 from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
+from scenefactor.data.sequence import FrameSequence
+from scenefactor.utils.camera import fov_to_intrinsics
 from scenefactor.utils.visualize import visualize_depth
-
-
-DEFAULT_CAMERA_PARAMS = {'fov': 60, 'znear': 0.01, 'zfar': 16}
 
 
 RenderObject = Trimesh | pyrender.Scene
@@ -44,10 +43,13 @@ class Renderer:
     def set_camera(self, camera_params: dict = None):
         """
         """
-        self.camera_params = camera_params or dict(DEFAULT_CAMERA_PARAMS)
-        self.camera_params['yfov'] = self.camera_params.get('yfov', self.camera_params.pop('fov'))
-        self.camera_params['yfov'] = self.camera_params['yfov'] * np.pi / 180.0
-        self.camera = pyrender.PerspectiveCamera(**self.camera_params)
+        self.camera_params = camera_params or fov_to_intrinsics(np.deg2rad(90), *self.config.target_dim)
+        self.camera = pyrender.IntrinsicsCamera(**{
+            'fx': self.camera_params['fx'],
+            'fy': self.camera_params['fy'],
+            'cx': self.camera_params['cx'],
+            'cy': self.camera_params['cy'],
+        })
         self.camera_node = self.scene.add(self.camera)
 
     def render(self, pose: NumpyTensor['4 4'], shaders=['default']) -> dict:
@@ -79,15 +81,31 @@ class Renderer:
 
 def render_multiview(
     source: RenderObject, renderer: Renderer, poses: NumpyTensor['n', '4', '4'], shaders=['default'], camera_params=None
-) -> list[NumpyTensor['h', 'w', 3]]:
+) -> list[dict]:
     """
     """
     renderer.set_object(source)
     renderer.set_camera(camera_params)
     outputs = []
     for pose in tqdm(poses, desc='Rendering views...'):
-        outputs.append(renderer.render(pose, shaders))
+        renders = {**renderer.render(pose, shaders), 'pose': pose} 
+        outputs.append(renders)
+    outputs = {
+        k: np.stack([x[k] for x in outputs], axis=0) for k in outputs[0].keys()
+    }
+    outputs['camera_params'] = renderer.camera_params
     return outputs
+
+
+def renders_to_sequence(renders: list[dict]):
+    """
+    """
+    return FrameSequence(
+        images=renders['image'],
+        depths=renders['depth'],
+        poses =renders['pose'],
+        metadata={'camera_params': renders['camera_params']}
+    )
 
 
 if __name__ == '__main__':

@@ -1,8 +1,14 @@
+import io
+
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from mpl_toolkits.mplot3d import Axes3D
 from PIL import Image
 
 from scenefactor.data.common import NumpyTensor
+from scenefactor.data.sequence import FrameSequence
 from scenefactor.utils.geom import BBox, combine_bmasks
 
 
@@ -89,3 +95,83 @@ def visualize_bboxes(bboxes: list[BBox], image: NumpyTensor['h', 'w', 3], color=
     for bbox in bboxes:
         cv2.rectangle(image_bboxes, (bbox[1], bbox[0]), (bbox[3], bbox[2]), color, 2)
     return Image.fromarray(image_bboxes)
+
+
+def visualize_sequence(sequence: FrameSequence) -> Image.Image:
+    """
+    """
+    def render(visualize_func: callable, data: NumpyTensor) -> NumpyTensor:
+        return [np.array(visualize_func(x)) for x in data]
+    
+    images = render(visualize_image, sequence.images)
+    num_cols = len(images)
+    num_rows = 1
+    tiles = images
+    if sequence.depths is not None:
+        depths = render(visualize_depth, sequence.depths)
+        num_rows += 1
+        tiles.extend(depths)
+    if sequence.smasks is not None:
+        smasks = render(visualize_bmasks, sequence.smasks)
+        num_rows += 1
+        tiles.extend(smasks)
+    if sequence.imasks is not None:
+        imasks = render(visualize_bmasks, sequence.imasks)
+        num_rows += 1
+        tiles.extend(imasks)
+    return visualize_tiles(tiles, num_rows, num_cols)
+
+
+def visualize_point_cloud(points, colors=None, size=1):
+    """
+    """
+    colors = np.full(points.shape, 0.5) if colors is None else colors / 255.0
+
+    trace = go.Scatter3d(
+        x=points[:, 0], 
+        y=points[:, 2], 
+        z=points[:, 1],
+        mode='markers',
+        marker=dict(
+            size=size,
+            color=['rgb({},{},{})'.format(r, g, b) for r, g, b in colors * 255],
+            opacity=0.8
+        )
+    )
+    layout = go.Layout(
+        margin=dict(l=0, r=0, b=0, t=0),
+        scene=dict(
+            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            zaxis=dict(showgrid=False, showticklabels=False, zeroline=False)
+        )
+    )
+    fig = go.Figure(data=[trace], layout=layout)
+    return fig
+
+
+def visualize_poses(poses: NumpyTensor['n', 4, 4], size=1):
+    """
+    """
+    origins, directions = poses[:, :3, 3], poses[:, :3, :3] @ np.array([[0, 0, -1]]).T
+
+    trace_directions = go.Cone(
+        x=origins[:, 0], 
+        y=origins[:, 2],
+        z=origins[:, 1],
+        u=directions[:, 0].ravel(), 
+        v=directions[:, 2].ravel(), 
+        w=directions[:, 1].ravel(),
+        colorscale='Viridis', sizemode='scaled', sizeref=0.1, showscale=False
+    )
+    layout = go.Layout(
+        margin=dict(l=0, r=0, b=0, t=0),
+        scene=dict(
+            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            zaxis=dict(showgrid=False, showticklabels=False, zeroline=False)
+        )
+    )
+    fig = go.Figure(data=[trace_directions], layout=layout)
+    return fig
+    

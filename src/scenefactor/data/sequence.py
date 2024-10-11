@@ -8,14 +8,15 @@ from pathlib import Path
 
 import numpy as np
 
-from src.scenefactor.data.common import NumpyTensor
+from scenefactor.data.common import NumpyTensor
+from scenefactor.utils.camera import ray_bundle
 
 
 @dataclass
 class FrameSequence:
     """
     """
-    images: NumpyTensor['n', 'h', 'w', 3] = None
+    images: NumpyTensor['n', 'h', 'w', 3]
     depths: NumpyTensor['n', 'h', 'w'] = None
     smasks: NumpyTensor['n', 'h', 'w'] = None
     imasks: NumpyTensor['n', 'h', 'w'] = None
@@ -119,18 +120,6 @@ def load_sequence(filename: Path | str) -> FrameSequence:
     return sequence
 
 
-def save_sequence_nerfstudio(filename: Path | str, sequence: FrameSequence) -> None:
-    """
-    """
-    pass
-
-
-def load_sequence_nerfstudio(filename: Path | str) -> FrameSequence:
-    """
-    """
-    pass
-
-
 def compute_instance2semantic_label_mapping(
     sequence: FrameSequence,
     instance_background: int=None,
@@ -154,3 +143,19 @@ def compute_instance2semantic_label_mapping(
     return {
         k: v.most_common(1)[0][0] for k, v in instance2semantic.items() if len(v)
     }
+
+
+def sequence_to_pc(sequence: FrameSequence, label: int = None) -> NumpyTensor['n', 3]:
+    """
+    """
+    assert sequence.poses  is not None
+    assert sequence.depths is not None
+    if label is not None:
+        assert sequence.imasks is not None
+    
+    origins, directions = ray_bundle(sequence.poses, sequence.metadata['camera_params'], norm_directions=False)
+    points = origins[:, None, None, :] + directions * sequence.depths[..., None]
+    points = points[sequence.depths[..., None].repeat(3, axis=-1) > 0] # remove background points
+    if label is not None:
+        points = points[sequence.imasks == label]
+    return points.reshape(-1, 3)

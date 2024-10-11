@@ -14,6 +14,7 @@ classifiers = [
 dependencies = [
     "kornia",
     "kornia_moons",
+    "lightning",
     "matplotlib",
     "natsort",
     "ninja",
@@ -26,6 +27,7 @@ dependencies = [
     "torchvision",
     "torchtyping",
     "tqdm",
+    "trimesh",
 ]
 
 [project.optional-dependencies]
