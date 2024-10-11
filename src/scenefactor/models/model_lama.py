@@ -1,7 +1,6 @@
 import yaml
 from pathlib import Path
 
-import kornia
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,6 +8,7 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 from scenefactor.data.common import NumpyTensor
+from scenefactor.utils.geom import dialate_bmask
 from scenefactor.utils.tensor import tensor_to_image
 
 PATH = Path(__file__).parents[3] / 'third_party/lama'
@@ -54,23 +54,25 @@ class ModelLama:
         self.model, self.model_config = load_lama_checkpoint(config.checkpoint, device)
     
     def __call__(
-        self, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w'],
+        self, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w'], dialate=None
     ) -> NumpyTensor['h', 'w', 3]:
         """
         """
         H, W = image.shape[:2]
+        bmask = dialate_bmask(bmask, dialate) if dialate is not None else bmask
         image = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0) / 255
         bmask = torch.from_numpy(bmask)[None, None]
-        bmask = (bmask > 0).float()
-        
-        def make_batch(image, bmask):
-            image = pad_tensor_to_modulo(image, mod=8)
-            bmask = pad_tensor_to_modulo(bmask, mod=8)
-            batch = {'image': image.float(), 'mask': bmask, 'unpad_to_size': (torch.tensor([H]), torch.tensor([W]))}
-            batch = move_to_device(batch, self.device)
-            return batch
+        bmask = (bmask > 0)
+        image = pad_tensor_to_modulo(image.float(), mod=8)
+        bmask = pad_tensor_to_modulo(bmask.float(), mod=8)
 
-        output = self.model(make_batch(image, bmask))[self.model_config.out_key]
+        batch = {'image': image, 'mask': bmask, 'unpad_to_size': (
+            torch.tensor([H]), 
+            torch.tensor([W]),
+        )}
+        batch = move_to_device(batch, self.device)
+
+        output = self.model(batch)[self.model_config.out_key]
         output = output[..., :H, :W]
         return tensor_to_image(output)[0]
 
