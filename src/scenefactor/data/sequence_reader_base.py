@@ -1,11 +1,13 @@
 import yaml
 from abc import ABC, abstractmethod
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import cv2
 import numpy as np
 from glob import glob
 
+from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence
 
 
@@ -84,6 +86,45 @@ class FrameSequenceReader(ABC):
         """
         assert cls.READER_CONFIG is not None, f'DATACONFIG is not defined for class {cls.__name__}.'
         return yaml.safe_load(open(cls.READER_CONFIG, 'r'))
+
+
+def instance_to_most_common_semantic(
+    imasks: NumpyTensor['n', 'h', 'w'],
+    smasks: NumpyTensor['n', 'h', 'w'],
+    instance_background: int=None,
+    semantic_background: int=None
+) -> dict[int, int]:
+    """
+    For each instance in the sequence, computes the most common semantic label it is associated with.
+    """    
+    instance2semantic = defaultdict(Counter)
+    for imask, smask in zip(imasks, smasks):
+        for instance_id in np.unique(imask):
+            if instance_id == instance_background:
+                continue
+            match = smask[imask == instance_id]
+            if semantic_background is not None:
+                match = match[match != semantic_background]
+            instance2semantic[instance_id].update(match)
+    return {
+        k: v.most_common(1)[0][0] for k, v in instance2semantic.items() if len(v)
+    }
+
+
+def extract_instances_by_semantics(
+    imasks: NumpyTensor['n', 'h', 'w'],
+    labels: list[int], 
+    instance2semantic: dict[int, int], 
+    instance_background=0
+) -> NumpyTensor['n', 'h', 'w']:
+    """
+    """
+    labels = set(labels)
+    for imask in imasks:
+        for instance_id, semantic_id in instance2semantic.items():
+            if semantic_id not in labels:
+                imask[imask == instance_id] = instance_background
+    return imasks
 
 
 if __name__ == '__main__':

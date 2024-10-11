@@ -7,7 +7,7 @@ import numpy as np
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence
-from scenefactor.data.sequence_reader_base import FrameSequenceReader
+from scenefactor.data.sequence_reader_base import *
 
 
 PATH = Path(__file__).parent
@@ -21,14 +21,16 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
     def __init__(
         self, 
         base_dir: Path | str, 
-        save_dir: Path | str, name: str, track='01'
+        save_dir: Path | str, name: str, track='01', semantic_classes=['thing']
     ):
         """
         """
-        super().__init__(base_dir, save_dir, name)
-
         assert track in ['00', '01']
+        assert all([c in ['thing', 'stuff'] for c in semantic_classes])
+
+        super().__init__(base_dir, save_dir, name)
         self.track = track
+        self.semantic_classes = semantic_classes
         self.data_dir = self.data_dir / 'imap' / track
         self.save_dir = self.save_dir / track
 
@@ -72,7 +74,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         
         poses = read_poses()
 
-        self.metadata['semantic_info'], semantic_label_unknown = read_semantic_info()
+        semantic_info, semantic_label_unknown = read_semantic_info()
         
         sequence = FrameSequence(
             poses=poses,
@@ -80,17 +82,33 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
             depths=np.array([self.load_depth(f, resize, scale=self.metadata['depth_scale']) for f in depth_filenames]),
             smasks=np.array([self.load_smask(f, resize) for f in smask_filenames]),
             imasks=np.array([self.load_imask(f, resize) for f in imask_filenames]),
-            metadata=self.metadata
         )
         sequence.smasks[sequence.smasks == 0] = semantic_label_unknown # replica labels unknown semantic class as 0
+
+        instance2semantic = instance_to_most_common_semantic(
+            sequence.imasks, 
+            sequence.smasks
+        )
+        sequence.imasks = extract_instances_by_semantics(
+            sequence.imasks,
+            labels=[label for label in semantic_info if semantic_info[label]['class'] in self.semantic_classes],
+            instance2semantic=instance2semantic
+        )
+        sequence.metadata.update({'semantic_info': semantic_info, 'instance2semantic': instance2semantic})
+
         return sequence
     
 
 if __name__ == '__main__':
     from scenefactor.data.sequence import save_sequence, load_sequence
+    from scenefactor.utils.visualize import visualize_sequence
 
-    reader = ReplicaVMapFrameSequenceReader('/home/gtangg12/data/replica-vmap/office_0')
-    sequence = reader.read()
+    reader = ReplicaVMapFrameSequenceReader(
+        base_dir='/home/gtangg12/data/replica-vmap', 
+        save_dir='/home/gtangg12/data/scenefactor/replica-vmap', 
+        name='room_0',
+    )
+    sequence = reader.read(slice=(0, -1, 250))
     print(sequence)
 
     save_sequence('tests/sequence', sequence)
@@ -108,3 +126,5 @@ if __name__ == '__main__':
     sequence = None
     print(sequence)
     print(sequence2)
+
+    visualize_sequence(sequence2).save('tests/sequence_replica_vmap.png')

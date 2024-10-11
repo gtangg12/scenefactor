@@ -48,7 +48,7 @@ def visualize_depth(depth: NumpyTensor['h', 'w']) -> Image.Image:
 
 def visualize_cmask(
     cmask: NumpyTensor['h', 'w'], 
-    image: NumpyTensor['h', 'w' ,3]=None, background=WHITE, foreground=None, blend=0.25
+    image: NumpyTensor['h', 'w' ,3]=None, background=BLACK, foreground=None, blend=0.25
 ) -> Image.Image:
     """
     """
@@ -72,7 +72,7 @@ def visualize_bmask(bmask: NumpyTensor['h', 'w']) -> Image.Image:
 
 def visualize_bmasks(
     masks: NumpyTensor['n', 'h', 'w'], 
-    image: NumpyTensor['h', 'w', 3]=None, background=WHITE, blend=0.25
+    image: NumpyTensor['h', 'w', 3]=None, background=BLACK, blend=0.25
 ) -> Image.Image:
     """
     """
@@ -112,11 +112,11 @@ def visualize_sequence(sequence: FrameSequence) -> Image.Image:
         num_rows += 1
         tiles.extend(depths)
     if sequence.smasks is not None:
-        smasks = render(visualize_bmasks, sequence.smasks)
+        smasks = render(visualize_cmask, sequence.smasks)
         num_rows += 1
         tiles.extend(smasks)
     if sequence.imasks is not None:
-        imasks = render(visualize_bmasks, sequence.imasks)
+        imasks = render(visualize_cmask, sequence.imasks)
         num_rows += 1
         tiles.extend(imasks)
     return visualize_tiles(tiles, num_rows, num_cols)

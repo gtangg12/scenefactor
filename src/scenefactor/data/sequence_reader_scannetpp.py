@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from scenefactor.data.sequence import FrameSequence
-from scenefactor.data.sequence_reader_base import FrameSequenceReader
+from scenefactor.data.sequence_reader_base import *
 
 
 PATH = Path(__file__).parent
