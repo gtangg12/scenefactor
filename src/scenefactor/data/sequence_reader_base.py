@@ -16,17 +16,12 @@ class FrameSequenceReader(ABC):
     """
     READER_CONFIG = None
     
-    def __init__(
-        self, 
-        base_dir: Path | str, 
-        save_dir: Path | str, name: str
-    ):
+    def __init__(self, base_dir: Path | str, name: str):
         """
         """
         self.name = name
         self.base_dir = Path(base_dir)
         self.data_dir = Path(base_dir) / name
-        self.save_dir = Path(save_dir) / name
         self.metadata = self.load_metadata()
 
     def sequence_names(self):

@@ -47,13 +47,16 @@ def bounding_box_centroid(coords: NumpyTensor['n', 3]) -> NumpyTensor[3]:
     return bounding_box(coords).mean(axis=0)
 
 
-def bmask_sample_points(bmask: NumpyTensor['h', 'w'], num_samples: int) -> NumpyTensor['n', 2]:
+def bmask_sample_points(bmask: NumpyTensor['h', 'w'], num_samples: int, indexing='ij') -> NumpyTensor['n', 2]:
     """
     Sample points from binary mask.
     """
+    assert indexing in ['ij', 'xy']
     indices = np.where(bmask)
     indices = np.array(indices).T
     indices = indices[np.random.choice(len(indices), num_samples, replace=False)]
+    if indexing == 'xy':
+        indices = indices[:, [1, 0]]
     return indices
 
 

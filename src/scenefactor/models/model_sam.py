@@ -79,7 +79,7 @@ class ModelSam:
         if bmasks is None:
             return None
         if dialate is not None:
-            bmasks = [cv2.dilate(mask.astype(np.uint8), dialate).astype(bool) for mask in bmasks]
+            bmasks = [dialate_bmask(mask, dialate) for mask in bmasks]
         return np.stack(bmasks)
 
 

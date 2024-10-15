@@ -174,4 +174,12 @@ def visualize_poses(poses: NumpyTensor['n', 4, 4], size=1):
     )
     fig = go.Figure(data=[trace_directions], layout=layout)
     return fig
-    
+
+
+def plot_points(image: Image.Image, points: NumpyTensor['n', 2], color=RED, size=1) -> Image.Image:
+    """
+    """
+    image = np.array(image)
+    for point in points:
+        cv2.circle(image, tuple(point), size, color, -1)
+    return Image.fromarray(image)

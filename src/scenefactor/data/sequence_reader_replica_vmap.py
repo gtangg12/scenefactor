@@ -19,20 +19,17 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
     READER_CONFIG = PATH / 'sequence_reader_replica_vmap.yaml'
 
     def __init__(
-        self, 
-        base_dir: Path | str, 
-        save_dir: Path | str, name: str, track='01', semantic_classes=['thing']
+        self, base_dir: Path | str, name: str, track='01', semantic_classes=['thing']
     ):
         """
         """
         assert track in ['00', '01']
         assert all([c in ['thing', 'stuff'] for c in semantic_classes])
 
-        super().__init__(base_dir, save_dir, name)
+        super().__init__(base_dir, name)
         self.track = track
         self.semantic_classes = semantic_classes
         self.data_dir = self.data_dir / 'imap' / track
-        self.save_dir = self.save_dir / track
 
     def read(self, slice=(0, -1, 20), resize: tuple[int, int]=None) -> FrameSequence:
         """
@@ -47,8 +44,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         def read_poses() -> NumpyTensor['n', 4, 4]:
             """
             """
-            poses = np.loadtxt(self.data_dir / 'traj_w_c.txt', delimiter=' ')
-            poses = poses.reshape(-1, 4, 4)
+            poses = np.loadtxt(self.data_dir / 'traj_w_c.txt', delimiter=' ').reshape(-1, 4, 4)
             poses = poses[slice[0]:slice[1]:slice[2]]
             poses = poses @ np.array(self.metadata['pose_axis_transform'])
             return poses
@@ -56,7 +52,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         def read_semantic_info() -> dict[int, dict]:
             """
             """
-            things = self.metadata.pop('semantic_classes_things')
+            things = set(self.metadata['semantic_classes_things'])
             with open(self.base_dir / self.name / 'habitat/info_preseg_semantic.json', 'r') as f:
                 semantic_info = json.load(f)['classes']
             semantic_info = {
@@ -77,11 +73,12 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
         semantic_info, semantic_label_unknown = read_semantic_info()
         
         sequence = FrameSequence(
-            poses=poses,
             images=np.array([self.load_image(f, resize) for f in image_filenames]),
             depths=np.array([self.load_depth(f, resize, scale=self.metadata['depth_scale']) for f in depth_filenames]),
             smasks=np.array([self.load_smask(f, resize) for f in smask_filenames]),
             imasks=np.array([self.load_imask(f, resize) for f in imask_filenames]),
+            poses=poses,
+            metadata=self.metadata
         )
         sequence.smasks[sequence.smasks == 0] = semantic_label_unknown # replica labels unknown semantic class as 0
 

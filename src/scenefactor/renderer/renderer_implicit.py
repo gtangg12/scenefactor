@@ -1,67 +1,131 @@
-from dataclasses import dataclass
+from copy import deepcopy
+from glob import glob
+from pathlib import Path
 
 import torch
+from omegaconf import OmegaConf
+from nerfstudio.cameras.cameras import Cameras
+from nerfstudio.cameras.camera_optimizers import CameraOptimizerConfig
+from nerfstudio.configs.base_config import ViewerConfig
+from nerfstudio.engine.trainer import TrainerConfig
+from nerfstudio.engine.optimizers import AdamOptimizerConfig
+from nerfstudio.engine.schedulers import ExponentialDecaySchedulerConfig
+from nerfstudio.scripts import train
+
+from scenefactor.data.common import NumpyTensor
+from scenefactor.data.sequence import FrameSequence, save_sequence
+from scenefactor.renderer.renderer_implicit_pipeline import ScenefactorPipelineConfig, ScenefactorPipeline, load_pipeline
+from scenefactor.renderer.renderer_implicit_data_utils import transform_and_scale
+from scenefactor.renderer.renderer_implicit_data import ScenefactorDataParserConfig, ScenefactorDataManagerConfig
+from scenefactor.renderer.renderer_implicit_model import ScenefactorModelConfig
 
 
-@dataclass
-class DataparserConfig:
-    """
-    """
-    pass
+TRAINER_CONFIG_TEMPLATE = TrainerConfig(method_name='renderer_implicit',
+    max_num_iterations=150000,
+    mixed_precision=True,
+    steps_per_eval_batch=1000,
+    steps_per_eval_image=500,
+    steps_per_eval_all_images=10000,
+    steps_per_save=1000,
+    save_only_latest_checkpoint=True,
+    vis='tensorboard',
+    pipeline=ScenefactorPipelineConfig(
+        datamanager=ScenefactorDataManagerConfig(
+            train_num_images_to_sample_from=-1,
+            train_num_times_to_repeat_images=100,
+            train_num_rays_per_batch=4096,
+            eval_num_images_to_sample_from=1,
+            eval_num_rays_per_batch=4096,
+            eval_image_indices=None,
+            dataparser=ScenefactorDataParserConfig()
+        ),
+        model=ScenefactorModelConfig(
+            eval_num_rays_per_chunk=32768,
+            enable_collider=True,
+            collider_params={'near_plane': 0.05, 'far_plane': 1000},
+            camera_optimizer=CameraOptimizerConfig(mode='SO3xR3')
+        )
+    ),
+    optimizers={
+        'proposal_networks': {
+            'optimizer': AdamOptimizerConfig(lr=5e-3, eps=1e-15),
+            'scheduler': ExponentialDecaySchedulerConfig(lr_final=5e-6, max_steps=200000)
+        },
+        'fields': {
+            'optimizer': AdamOptimizerConfig(lr=5e-3, eps=1e-15),
+            'scheduler': ExponentialDecaySchedulerConfig(lr_final=5e-6, max_steps=200000)
+        }
+    },
+    viewer=ViewerConfig()
+)
 
 
-class Dataparser:
+def populate_template(sequence_name: str, sequence_path: Path | str) -> OmegaConf:
     """
     """
-    pass
-
-
-@dataclass
-class DatamanagerConfig:
-    """
-    """
-    pass
-
-
-class Datamanager:
-    """
-    """
-    pass
-
-
-class Dataset:
-    """
-    """
-    pass
-
-
-@dataclass
-class FieldConfig:
-    """
-    """
-    pass
-
-
-class Field:
-    """
-    """
-    pass
-
-
-@dataclass
-class ModelConfig:
-    """
-    """
-    pass
-
-
-class Model:
-    """
-    """
-    pass
+    trainer_config = deepcopy(TRAINER_CONFIG_TEMPLATE)
+    trainer_config.experiment_name = sequence_name
+    trainer_config.pipeline.datamanager.dataparser.sequence_path = sequence_path
+    return trainer_config
 
 
 class RendererImplicit:
     """
     """
-    pass
+    def __init__(
+        self,
+        sequence: FrameSequence,
+        sequence_name: str, 
+        sequence_path: Path | str
+    ):
+        """
+        """
+        self.config = populate_template(sequence_name, sequence_path)
+        self.output = Path(self.config.output_dir) / self.config.method_name / self.config.experiment_name
+
+        save_sequence(sequence_path, sequence)
+        self.sequence = sequence
+        self.pipeline = None
+
+    def train(self) -> ScenefactorPipeline:
+        """
+        """
+        train.main(self.config)
+        self.pipeline = load_pipeline(self.checkpoint())
+        return self.pipeline
+
+    def render(self, poses: NumpyTensor['batch', 4, 4]) -> dict:
+        """
+        """
+        poses = torch.from_numpy(poses)
+        poses = transform_and_scale(
+            poses,
+            self.pipeline.datamanager.dataparser.dataparser_scale,
+            self.pipeline.datamanager.dataparser.dataparser_transform
+        )
+        cameras = Cameras(poses, **self.sequence.metadata['camera_params'])
+        outputs = self.pipeline.model.get_outputs_for_camera(cameras)
+        return outputs
+
+    def checkpoint(self) -> str:
+        """
+        Returns the latest checkpoint (ordered by time) or raises FileNotFoundError if no checkpoint is found.
+        """
+        path = self.output / 'nerfstudio_models'
+        if path.exists():
+            return sorted(glob(path))[-1]
+        raise FileNotFoundError(f'No checkpoint found in {path}')
+
+
+if __name__ == '__main__':
+    from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
+
+    reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
+    sequence = reader.read(slice=(0, -1, 10))
+
+    renderer = RendererImplicit(
+        sequence, 
+        sequence_path='/home/gtangg12/data/scenefactor/replica-vmap/room_0',
+        sequence_name='replica_vmap_room_0'
+    )
+    renderer.train()

@@ -88,6 +88,12 @@ class FrameSequence:
             output += f"    {tname}: {{'shape': {shape}, 'dtype': {dtype}}}\n"
         #output += f"    metadata: {json.dumps(self.metadata, indent=4, separators=(',', ': '))}"
         return output
+    
+    @classmethod
+    def image_tensor(cls, name: str):
+        """
+        """
+        return name in ['images', 'depths', 'smasks', 'imasks']
 
 
 def save_sequence(filename: Path | str, sequence: FrameSequence) -> None:
