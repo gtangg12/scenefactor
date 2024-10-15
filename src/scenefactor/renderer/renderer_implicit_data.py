@@ -96,6 +96,11 @@ class ScenefactorDataset(torch.utils.data.Dataset):
         """
         """
         return len(self.sequence)
+    
+    def __getitem__(self, index):
+        """
+        """
+        return self.get_data(index)
 
     def get_data(self, index, **kwargs):
         """

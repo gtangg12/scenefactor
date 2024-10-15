@@ -37,3 +37,6 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["scenefactor*"]
+
+[project.entry-points.'nerfstudio.method_configs']
+scenefactor = 'scenefactor.renderer.renderer_implicit_config:ScenefactorMethod'
