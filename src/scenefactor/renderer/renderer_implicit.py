@@ -5,7 +5,6 @@ from pathlib import Path
 import torch
 from omegaconf import OmegaConf
 from nerfstudio.cameras.cameras import Cameras
-from nerfstudio.cameras.camera_optimizers import CameraOptimizerConfig
 from nerfstudio.configs.base_config import ViewerConfig
 from nerfstudio.engine.trainer import TrainerConfig
 from nerfstudio.engine.optimizers import AdamOptimizerConfig
@@ -20,43 +19,66 @@ from scenefactor.renderer.renderer_implicit_data import ScenefactorDataParserCon
 from scenefactor.renderer.renderer_implicit_model import ScenefactorModelConfig
 
 
+"""
+pip install gsplat==1.4.0+pt24cu121 --index-url https://docs.gsplat.studio/whl
+"""
+
 TRAINER_CONFIG_TEMPLATE = TrainerConfig(method_name='renderer_implicit',
-    max_num_iterations=150000,
-    mixed_precision=True,
-    steps_per_eval_batch=1000,
     steps_per_eval_image=500,
+    steps_per_eval_batch=0,
+    steps_per_save=2000,
     steps_per_eval_all_images=10000,
-    steps_per_save=1000,
-    save_only_latest_checkpoint=True,
-    vis='tensorboard',
+    max_num_iterations=10000,
+    mixed_precision=False,
     pipeline=ScenefactorPipelineConfig(
         datamanager=ScenefactorDataManagerConfig(
-            train_num_images_to_sample_from=-1,
-            train_num_times_to_repeat_images=100,
-            train_num_rays_per_batch=4096,
-            eval_num_images_to_sample_from=1,
-            eval_num_rays_per_batch=4096,
-            eval_image_indices=None,
             dataparser=ScenefactorDataParserConfig()
         ),
         model=ScenefactorModelConfig(
-            eval_num_rays_per_chunk=32768,
-            enable_collider=True,
-            collider_params={'near_plane': 0.05, 'far_plane': 1000},
-            camera_optimizer=CameraOptimizerConfig(mode='SO3xR3')
-        )
+            cull_alpha_thresh=0.005,
+            densify_grad_thresh=0.0005,
+        ),
     ),
     optimizers={
-        'proposal_networks': {
-            'optimizer': AdamOptimizerConfig(lr=5e-3, eps=1e-15),
-            'scheduler': ExponentialDecaySchedulerConfig(lr_final=5e-6, max_steps=200000)
+        'means': {
+            'optimizer': AdamOptimizerConfig(lr=1.6e-4, eps=1e-15),
+            'scheduler': ExponentialDecaySchedulerConfig(
+                lr_final=1.6e-6,
+                max_steps=30000,
+            ),
         },
-        'fields': {
+        'features_dc': {
+            'optimizer': AdamOptimizerConfig(lr=0.0025, eps=1e-15),
+            'scheduler': None,
+        },
+        'features_rest': {
+            'optimizer': AdamOptimizerConfig(lr=0.0025 / 20, eps=1e-15),
+            'scheduler': None,
+        },
+        'opacities': {
+            'optimizer': AdamOptimizerConfig(lr=0.05, eps=1e-15),
+            'scheduler': None,
+        },
+        'scales': {
+            'optimizer': AdamOptimizerConfig(lr=0.005, eps=1e-15),
+            'scheduler': None,
+        },
+        'quats': {'optimizer': AdamOptimizerConfig(lr=0.001, eps=1e-15), 'scheduler': None},
+        'camera_opt': {
+            'optimizer': AdamOptimizerConfig(lr=1e-4, eps=1e-15),
+            'scheduler': ExponentialDecaySchedulerConfig(
+                lr_final=5e-7, max_steps=30000, warmup_steps=1000, lr_pre_warmup=0
+            ),
+        },
+        'bilateral_grid': {
             'optimizer': AdamOptimizerConfig(lr=5e-3, eps=1e-15),
-            'scheduler': ExponentialDecaySchedulerConfig(lr_final=5e-6, max_steps=200000)
-        }
+            'scheduler': ExponentialDecaySchedulerConfig(
+                lr_final=1e-4, max_steps=30000, warmup_steps=1000, lr_pre_warmup=0
+            ),
+        },
     },
-    viewer=ViewerConfig()
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis='tensorboard',
 )
 
 

@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from nerfstudio.cameras.cameras import Cameras, camera_utils
 from nerfstudio.data.dataparsers.base_dataparser import DataParserConfig, DataParser
-from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManagerConfig, VanillaDataManager
+from nerfstudio.data.datamanagers.full_images_datamanager import FullImageDatamanagerConfig, FullImageDatamanager
 from nerfstudio.data.scene_box import SceneBox
 
 from scenefactor.data.common import TorchTensor
@@ -39,7 +39,7 @@ class ScenefactorDataParserOutputs:
         """
         with open(path, 'wb') as f:
             pickle.dump({
-                'dataparser_scale': self.dataparser_scale,
+                'dataparser_scale'    : self.dataparser_scale,
                 'dataparser_transform': self.dataparser_transform
             }, f)
 
@@ -97,7 +97,7 @@ class ScenefactorDataset(torch.utils.data.Dataset):
         """
         return len(self.sequence)
 
-    def __getitem__(self, index):
+    def get_data(self, index, **kwargs):
         """
         """
         return {
@@ -135,15 +135,23 @@ class ScenefactorDataset(torch.utils.data.Dataset):
 
 
 @dataclass
-class ScenefactorDataManagerConfig(VanillaDataManagerConfig):
+class ScenefactorDataManagerConfig(FullImageDatamanagerConfig):
     """
     """
     _target: type = field(default_factory=lambda: ScenefactorDataManager)
 
 
-class ScenefactorDataManager(VanillaDataManager):
+class ScenefactorDataManager(FullImageDatamanager):
     """
     """
+    def __init__(self, *args, **kwargs):
+        """
+        """
+        super().__init__(*args, **kwargs)
+        # cached_property complicated with inheritance
+        self.cached_train = self._load_images('train', cache_images_device=self.config.cache_images)
+        self.cached_eval  = self._load_images('eval',  cache_images_device=self.config.cache_images)
+
     @cached_property
     def dataset_type(self) -> type:
         return ScenefactorDataset

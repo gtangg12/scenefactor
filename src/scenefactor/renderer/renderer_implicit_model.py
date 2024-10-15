@@ -1,23 +1,16 @@
 from dataclasses import dataclass, field
 
-from nerfstudio.fields.nerfacto_field import NerfactoField
-from nerfstudio.models.nerfacto import NerfactoModelConfig, NerfactoModel
-
-
-class ScenefactorField(NerfactoField):
-    """
-    """
-    pass
+from nerfstudio.models.splatfacto import SplatfactoModel, SplatfactoModelConfig
 
 
 @dataclass
-class ScenefactorModelConfig(NerfactoModelConfig):
+class ScenefactorModelConfig(SplatfactoModelConfig):
     """
     """
     _target: type = field(default_factory=lambda: ScenefactorModel)
 
 
-class ScenefactorModel(NerfactoModel):
+class ScenefactorModel(SplatfactoModel):
     """
     """
     pass
