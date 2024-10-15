@@ -1,8 +1,10 @@
 {
     "python.analysis.extraPaths": [
-        "./third_party/segment-anything",
-        "./third_party/segment-anything-2",
+        "./third_party/GroundingDino",
+        "./third_party/InstantMesh",
+        "./third_party/nerfstudio",
+        "./third_party/recognize-anything",
         "./third_party/lama",
-        "./third_party/PAL4Inpaint"
+        "./third_party/sam-hq",
     ]
 }
