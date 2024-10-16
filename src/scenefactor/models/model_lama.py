@@ -54,7 +54,7 @@ class ModelLama:
         self.model, self.model_config = load_lama_checkpoint(config.checkpoint, device)
     
     def __call__(
-        self, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w'], dialate=None
+        self, image: NumpyTensor['h', 'w', 3], bmask: NumpyTensor['h', 'w'], dialate=None, iterations=1
     ) -> NumpyTensor['h', 'w', 3]:
         """
         """
@@ -66,14 +66,15 @@ class ModelLama:
         image = pad_tensor_to_modulo(image.float(), mod=8)
         bmask = pad_tensor_to_modulo(bmask.float(), mod=8)
 
-        batch = {'image': image, 'mask': bmask, 'unpad_to_size': (
-            torch.tensor([H]), 
-            torch.tensor([W]),
-        )}
-        batch = move_to_device(batch, self.device)
-
-        output = self.model(batch)[self.model_config.out_key]
-        output = output[..., :H, :W]
+        output = image
+        for _ in range(iterations):
+            batch = {'image': output, 'mask': bmask, 'unpad_to_size': (
+                torch.tensor([H]), 
+                torch.tensor([W]),
+            )}
+            batch = move_to_device(batch, self.device)
+            output = self.model(batch)[self.model_config.out_key]
+            output = output[..., :H, :W]
         return tensor_to_image(output)[0]
 
 
@@ -87,7 +88,7 @@ if __name__ == '__main__':
     model = ModelLama(OmegaConf.create({
         'checkpoint': '/home/gtangg12/scenefactor/checkpoints/big-lama'
     }))
-    image_inpainted = model(image, bmask)
+    image_inpainted = model(image, bmask, iterations=3)
     print(image_inpainted.shape)
 
     Image.fromarray(image).save('tests/lama_image.png')
