@@ -1,15 +1,16 @@
+from __future__ import annotations
 import copy
-import json
 import os
 import pickle
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from scenefactor.data.common import NumpyTensor
-from scenefactor.utils.camera import ray_bundle
+from scenefactor.utils.camera import ray_bundle, rescale_camera_resolution
 
 
 @dataclass
@@ -89,11 +90,24 @@ class FrameSequence:
         #output += f"    metadata: {json.dumps(self.metadata, indent=4, separators=(',', ': '))}"
         return output
     
-    @classmethod
-    def image_tensor(cls, name: str):
+    def rescale(self, factor: float) -> FrameSequence:
         """
         """
-        return name in ['images', 'depths', 'smasks', 'imasks']
+        def rescale_tensor(tensor: NumpyTensor, interpolation=cv2.INTER_LINEAR):
+            """
+            """
+            return np.stack([cv2.resize(x, None, fx=factor, fy=factor, interpolation=interpolation) for x in tensor])
+        
+        sequence = FrameSequence(
+            images=rescale_tensor(self.images, interpolation=cv2.INTER_LINEAR),
+            depths=rescale_tensor(self.depths, interpolation=cv2.INTER_NEAREST) if self.depths is not None else None,
+            smasks=rescale_tensor(self.smasks, interpolation=cv2.INTER_NEAREST) if self.smasks is not None else None,
+            imasks=rescale_tensor(self.imasks, interpolation=cv2.INTER_NEAREST) if self.imasks is not None else None,
+            poses=self.poses,
+            metadata=copy.deepcopy(self.metadata)
+        )
+        sequence.metadata['camera_params'] = rescale_camera_resolution(self.metadata['camera_params'], factor)
+        return sequence
 
 
 def save_sequence(filename: Path | str, sequence: FrameSequence) -> None:
@@ -126,7 +140,7 @@ def load_sequence(filename: Path | str) -> FrameSequence:
     return FrameSequence(**sequence, metadata=metadata)
 
 
-def sequence_to_pc(sequence: FrameSequence, label: int = None) -> NumpyTensor['n', 3]:
+def sequence_to_point_cloud(sequence: FrameSequence, label: int = None) -> NumpyTensor['n', 3]:
     """
     """
     assert sequence.poses  is not None

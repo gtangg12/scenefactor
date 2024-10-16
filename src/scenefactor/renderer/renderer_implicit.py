@@ -1,3 +1,4 @@
+import pickle
 from copy import deepcopy
 from glob import glob
 from pathlib import Path
@@ -6,12 +7,29 @@ import torch
 from omegaconf import OmegaConf
 from nerfstudio.cameras.cameras import Cameras
 from nerfstudio.scripts import train
+from nerfstudio.utils.eval_utils import eval_load_checkpoint
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence, save_sequence
 from scenefactor.renderer.renderer_implicit_config import ScenefactorMethod
-from scenefactor.renderer.renderer_implicit_pipeline import ScenefactorPipeline, load_pipeline
+from scenefactor.renderer.renderer_implicit_pipeline import ScenefactorPipeline
 from scenefactor.renderer.renderer_implicit_data_utils import transform_and_scale
+
+
+def load_pipeline(checkpoint: Path | str, device='cuda') -> ScenefactorPipeline:
+    """
+    """
+    config = OmegaConf.load(Path(checkpoint) / 'config.yaml')
+    
+    # Load transforms
+    dataparser = config.pipeline.datamanager.dataparser
+    transforms = pickle.load(open(dataparser.sequence_path / 'transforms.pkl', 'rb'))
+    dataparser.update(**transforms)
+    
+    # Mount checkpoint on pipeline
+    pipeline = config.pipeline.setup(device=device)
+    eval_load_checkpoint(config, pipeline)
+    return pipeline
 
 
 def populate_template(sequence_name: str, sequence_path: Path | str) -> OmegaConf:
@@ -75,7 +93,8 @@ if __name__ == '__main__':
     from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
 
     reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
-    sequence = reader.read(slice=(0, -1, 10))
+    sequence = reader.read(slice=(0, -1, 5))
+    sequence = sequence.rescale(0.5)
 
     renderer = RendererImplicit(
         sequence, 

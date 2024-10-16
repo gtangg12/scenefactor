@@ -131,7 +131,6 @@ class ScenefactorDataset(torch.utils.data.Dataset):
     
     def image_dims(self, index):
         """ 
-        Returns the dataparser specified image dimensions of the datapoint located at `index`.
         """
         return (
             self.cameras[index].height.item(), 

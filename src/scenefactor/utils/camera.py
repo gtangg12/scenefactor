@@ -79,5 +79,18 @@ def fov_to_intrinsics(fov: float, W: int, H: int) -> dict:
     }
 
 
+def rescale_camera_resolution(params: dict, hs: float, ws: float = None):
+    """
+    """
+    ws = ws or hs
+    params['height'] = int(params['height'] * hs)
+    params['width']  = int(params['width']  * ws)
+    params['fx'] *= ws
+    params['fy'] *= hs
+    params['cx'] *= ws
+    params['cy'] *= hs
+    return params
+
+
 if __name__ == '__main__':
     pass

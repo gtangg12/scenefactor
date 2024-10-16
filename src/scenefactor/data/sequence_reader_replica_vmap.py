@@ -18,9 +18,7 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
     """
     READER_CONFIG = PATH / 'sequence_reader_replica_vmap.yaml'
 
-    def __init__(
-        self, base_dir: Path | str, name: str, track='01', semantic_classes=['thing']
-    ):
+    def __init__(self, base_dir: Path | str, name: str, track='01', semantic_classes=['thing']):
         """
         """
         assert track in ['00', '01']

@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 
 from nerfstudio.pipelines.base_pipeline import VanillaPipelineConfig, VanillaPipeline
-#from nerfstudio.utils.eval_utils import eval_load_checkpoint
 
 
 @dataclass
@@ -15,20 +14,3 @@ class ScenefactorPipeline(VanillaPipeline):
     """
     """
     pass
-
-'''
-def load_pipeline(checkpoint: Path | str, device='cuda') -> ScenefactorPipeline:
-    """
-    """
-    config = OmegaConf.load(Path(checkpoint) / 'config.yaml')
-    
-    # Load transforms
-    dataparser = config.pipeline.datamanager.dataparser
-    transforms = pickle.load(open(dataparser.sequence_path / 'transforms.pkl', 'rb'))
-    dataparser.update(**transforms)
-    
-    # Mount checkpoint on pipeline
-    pipeline = config.pipeline.setup(device=device)
-    eval_load_checkpoint(config, pipeline)
-    return pipeline
-'''
