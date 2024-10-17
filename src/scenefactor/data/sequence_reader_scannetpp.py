@@ -4,13 +4,10 @@ from scenefactor.data.sequence import FrameSequence
 from scenefactor.data.sequence_reader_base import *
 
 
-PATH = Path(__file__).parent
-
-
 class ScanNetPPFrameSequenceReader(FrameSequenceReader):
     """
     """
-    READER_CONFIG = PATH / 'sequence_reader_scannetpp.yaml'
+    READER_CONFIG = 'dataconfig_scannetpp.yaml'
 
     def __init__(
         self, 

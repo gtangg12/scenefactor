@@ -134,7 +134,11 @@ def load_sequence(filename: Path | str) -> FrameSequence:
     for k, _ in FrameSequence.__dataclass_fields__.items():
         if k == 'metadata':
             continue
-        sequence[k] = np.load(filename / f'{k}.npy')
+        tensor_filename = filename / f'{k}.npy'
+        if tensor_filename.exists():
+            sequence[k] = np.load(tensor_filename)
+        else:
+            sequence[k] = None
     with open(filename / 'metadata.pkl', 'rb') as f:
         metadata = pickle.load(f)
     return FrameSequence(**sequence, metadata=metadata)

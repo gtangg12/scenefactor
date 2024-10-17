@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence
-from scenefactor.utils.camera import fov_to_intrinsics
+from scenefactor.utils.camera import unpack_camera_intrinsics_fov
 from scenefactor.utils.visualize import visualize_depth
 
 
@@ -43,7 +43,16 @@ class Renderer:
     def set_camera(self, camera_params: dict = None):
         """
         """
-        self.camera_params = camera_params or fov_to_intrinsics(np.deg2rad(90), *self.config.target_dim)
+        def default_camera_params():
+            """ 
+            Returns camera parameters for a 90 degree FOV camera.
+            """
+            params = unpack_camera_intrinsics_fov(np.deg2rad(90), *self.config.target_dim)
+            params['width']  = self.config.target_dim[0]
+            params['height'] = self.config.target_dim[1]
+            return params
+        
+        self.camera_params = camera_params or default_camera_params()
         self.camera = pyrender.IntrinsicsCamera(**{
             'fx': self.camera_params['fx'],
             'fy': self.camera_params['fy'],

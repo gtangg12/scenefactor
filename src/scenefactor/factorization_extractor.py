@@ -10,7 +10,7 @@ from scenefactor.data.sequence import FrameSequence
 from scenefactor.models import ModelClip
 from scenefactor.utils.geom import *
 from scenefactor.utils.visualize import *
-from scenefactor.factorization_utils import *
+from scenefactor.factorization_common import *
 
 
 SequenceBmasks = dict[int, dict[int, NumpyTensor['h', 'w']]] # label: index: bmask

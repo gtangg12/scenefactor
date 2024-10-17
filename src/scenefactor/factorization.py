@@ -10,7 +10,7 @@ from scenefactor.data.sequence import FrameSequence, compute_instance2semantic_l
 from scenefactor.factorization_extractor import SequenceExtractor
 from scenefactor.factorization_inpainter import SequenceInpainter
 from scenefactor.factorization_generator import SequenceGenerator
-from scenefactor.factorization_utils import *
+from scenefactor.factorization_common import *
 
 
 def reset_cache(module):

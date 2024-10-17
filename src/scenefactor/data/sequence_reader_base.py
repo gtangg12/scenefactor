@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 from glob import glob
 
-from scenefactor.data.common import NumpyTensor
+from scenefactor.data.common import NumpyTensor, CONFIGS_DIR
 from scenefactor.data.sequence import FrameSequence
 
 
@@ -80,7 +80,8 @@ class FrameSequenceReader(ABC):
         Default function to load metadata from yaml config.
         """
         assert cls.READER_CONFIG is not None, f'DATACONFIG is not defined for class {cls.__name__}.'
-        return yaml.safe_load(open(cls.READER_CONFIG, 'r'))
+        metadata = yaml.safe_load(open(CONFIGS_DIR / cls.READER_CONFIG, 'r'))
+        return metadata if metadata is not None else {}
 
 
 def instance_to_most_common_semantic(

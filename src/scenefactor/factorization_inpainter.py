@@ -6,7 +6,7 @@ from scenefactor.data.sequence import FrameSequence
 from scenefactor.models import ModelLama, ModelSamGrounded
 from scenefactor.utils.geom import *
 from scenefactor.utils.visualize import *
-from scenefactor.factorization_utils import *
+from scenefactor.factorization_common import *
 
 
 class SequenceInpainter:

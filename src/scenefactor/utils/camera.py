@@ -65,22 +65,55 @@ def ray_bundle(poses: NumpyTensor['n', 4, 4], camera_params: dict, norm_directio
     return poses[:, :3, 3], directions
 
 
-def fov_to_intrinsics(fov: float, W: int, H: int) -> dict:
+def unpack_camera_intrinsics(K: NumpyTensor[3, 3]) -> dict:
     """
+    Unpacks camera intrinsics matrix to dict.
+    """
+    return {
+        'fx': K[0, 0],
+        'fy': K[1, 1],
+        'cx': K[0, 2],
+        'cy': K[1, 2],
+    }
+
+
+def unpack_camera_intrinsics_fov(fov: float, W: int, H: int) -> dict:
+    """
+    Unpacks camera intrinsics matrix to dict given FOV (radians). Assumes pinhole camera.
     """
     ratio = np.tan(fov / 2)
     return {
         'fx': W / (2 * ratio),
         'fy': H / (2 * ratio), # pinhole camera has same fx, fy
-        'cx': W / 2,
-        'cy': H / 2,
-        'width' : W,
-        'height': H,
+        'cx': (W - 1) / 2,
+        'cy': (H - 1) / 2,
     }
+
+
+def pack_camera_intrinsics(params: dict) -> np.ndarray:
+    """
+    Packs camera intrinsics dict to intrinsics matrix K
+    """
+    return np.array([
+        [params['fx'], 0, params['cx']],
+        [0, params['fy'], params['cy']],
+        [0, 0, 1],
+    ])
+
+
+def pack_camera_intrinsics_fov(params: dict):
+    """
+    Packs camera intrinsics from dict to FOV (radians) and image dimensions (W, H).
+    """
+    W = params['cx'] * 2 + 1
+    H = params['cy'] * 2 + 1
+    fov = 2 * np.atan(W / (2 * params['fx']))
+    return W, H, fov
 
 
 def rescale_camera_resolution(params: dict, hs: float, ws: float = None):
     """
+    Rescales camera intrinsics and image resolution.
     """
     ws = ws or hs
     params['height'] = int(params['height'] * hs)

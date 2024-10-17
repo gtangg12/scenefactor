@@ -5,7 +5,7 @@ from scenefactor.models import ModelClip, ModelInstantMesh
 from scenefactor.utils.geom import *
 from scenefactor.utils.visualize import *
 from scenefactor.utils.tensor import untile
-from scenefactor.factorization_utils import *
+from scenefactor.factorization_common import *
 
 
 def metric_multiview_quality(

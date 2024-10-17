@@ -10,20 +10,16 @@ from scenefactor.data.sequence import FrameSequence
 from scenefactor.data.sequence_reader_base import *
 
 
-PATH = Path(__file__).parent
-
-
 class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
     """
     """
-    READER_CONFIG = PATH / 'sequence_reader_replica_vmap.yaml'
+    READER_CONFIG = 'dataconfig_replica_vmap.yaml'
 
     def __init__(self, base_dir: Path | str, name: str, track='01', semantic_classes=['thing']):
         """
         """
         assert track in ['00', '01']
         assert all([c in ['thing', 'stuff'] for c in semantic_classes])
-
         super().__init__(base_dir, name)
         self.track = track
         self.semantic_classes = semantic_classes
@@ -89,8 +85,6 @@ class ReplicaVMapFrameSequenceReader(FrameSequenceReader):
             labels=[label for label in semantic_info if semantic_info[label]['class'] in self.semantic_classes],
             instance2semantic=instance2semantic
         )
-        sequence.metadata.update({'semantic_info': semantic_info, 'instance2semantic': instance2semantic})
-
         return sequence
     
 
@@ -98,11 +92,7 @@ if __name__ == '__main__':
     from scenefactor.data.sequence import save_sequence, load_sequence
     from scenefactor.utils.visualize import visualize_sequence
 
-    reader = ReplicaVMapFrameSequenceReader(
-        base_dir='/home/gtangg12/data/replica-vmap', 
-        save_dir='/home/gtangg12/data/scenefactor/replica-vmap', 
-        name='room_0',
-    )
+    reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
     sequence = reader.read(slice=(0, -1, 250))
     print(sequence)
 

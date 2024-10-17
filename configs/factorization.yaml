@@ -1,0 +1,15 @@
+label_finder:
+  segmenter:
+    checkpoint: /home/gtangg12/scenefactor/checkpoints/sam_hq_vit_h.pth
+    mode: pred
+    min_area: 256
+
+  inpainter:
+    checkpoint: /home/gtangg12/scenefactor/checkpoints/big-lama
+
+  segmenter_num_samples: 32
+  occlusion_one_sided_mult: 4
+  occlusion_one_sided_threshold_ratio: 0.1
+  occlusion_threshold_ratio: 0.025
+
+deduplication_radius: 5

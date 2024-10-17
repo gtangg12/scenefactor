@@ -91,14 +91,24 @@ class RendererImplicit:
 
 if __name__ == '__main__':
     from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
+    from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
 
-    reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
-    sequence = reader.read(slice=(0, -1, 5))
+    # reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
+    # sequence = reader.read(slice=(0, -1, 5))
+    # sequence = sequence.rescale(0.5)
+    # renderer = RendererImplicit(
+    #     sequence, 
+    #     sequence_path='/home/gtangg12/data/scenefactor/replica-vmap/room_0',
+    #     sequence_name='replica_vmap_room_0'
+    # )
+
+    reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0000')
+    sequence = reader.read(slice=(0, -1, 1))
     sequence = sequence.rescale(0.5)
-
     renderer = RendererImplicit(
         sequence, 
-        sequence_path='/home/gtangg12/data/scenefactor/replica-vmap/room_0',
-        sequence_name='replica_vmap_room_0'
+        sequence_path='/home/gtangg12/data/scenefactor/graspnet/scene_0000',
+        sequence_name='graspnet_scene_0000'
     )
+
     renderer.train()
