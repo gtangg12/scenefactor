@@ -1,4 +1,5 @@
 from collections import defaultdict
+from pathlib import Path
 
 import cv2
 import torch
@@ -11,6 +12,8 @@ from groundingdino.util.inference import load_model, predict
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.utils.geom import BBox, bbox_area, bbox_overlap
+
+PATH = Path(__file__).parents[3] / 'third_party/GroundingDino'
 
 
 def deduplicate_by_label(bboxes: NumpyTensor['n', 4], logits: NumpyTensor['n'], labels: list[str]):
@@ -53,7 +56,7 @@ class ModelGroundingDino:
         """
         self.config = config
         self.device = device
-        self.model = load_model(config.checkpoint_config, config.checkpoint)
+        self.model = load_model(PATH / 'groundingdino/config' / config.checkpoint_config, config.checkpoint)
         self.model.to(device)
         self.model.eval()
     
