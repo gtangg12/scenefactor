@@ -60,11 +60,36 @@ def bmask_sample_points(bmask: NumpyTensor['h', 'w'], num_samples: int, indexing
     return indices
 
 
+def bmask_sample_points_grid(bmask: NumpyTensor['h', 'w'], stride: int, std=0) -> NumpyTensor['n', 2]:
+    """
+    Sample points from binary mask on a grid.
+    """
+    H, W = bmask.shape
+    points_x, points_y = np.meshgrid(np.arange(0, W, stride), np.arange(0, H, stride))
+    points = np.stack([points_x.flatten(), points_y.flatten()], axis=1)
+    if std:
+        points = points + np.random.normal(0, std, points.shape)
+        points = np.clip(points, 0, [W - 1, H - 1])
+        points = points.astype(int)
+    points = points[bmask[
+        points[:, 1].astype(int), 
+        points[:, 0].astype(int),
+    ]]
+    return points    
+
+
 def bmask_iou(bmask1: NumpyTensor['h', 'w'], bmask2: NumpyTensor['h', 'w']) -> float:
     """
     Compute intersection over union of binary masks.
     """
     return np.sum(bmask1 & bmask2) / np.sum(bmask1 | bmask2)
+
+
+def resize_bmask(bmask: NumpyTensor['h', 'w'], size: tuple[int, int]) -> NumpyTensor['h', 'w']:
+    """
+    Resize binary mask.
+    """
+    return cv2.resize(bmask.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST).astype(bool)
 
 
 def dialate_bmask(bmask: NumpyTensor['h', 'w'], radius) -> NumpyTensor['h', 'w']:
@@ -73,6 +98,21 @@ def dialate_bmask(bmask: NumpyTensor['h', 'w'], radius) -> NumpyTensor['h', 'w']
     bmask = bmask.astype(np.uint8)
     bmask = cv2.dilate(bmask, np.ones((radius, radius)), iterations=1)
     return bmask.astype(bool)
+
+
+def erode_bmask(bmask: NumpyTensor['h', 'w'], radius) -> NumpyTensor['h', 'w']:
+    """
+    """
+    bmask = bmask.astype(np.uint8)
+    bmask = cv2.erode(bmask, np.ones((radius, radius)), iterations=1)
+    return bmask.astype(bool)
+
+
+def bmask_boundary_length(bmask: NumpyTensor['h', 'w']) -> int:
+    """
+    """
+    lmask = dialate_bmask(bmask, radius=2)
+    return np.sum(lmask & ~bmask)
 
 
 def combine_bmasks(bmasks: NumpyTensor['n', 'h', 'w'], sort=False) -> NumpyTensor['h w']:
@@ -270,13 +310,13 @@ def resize_bbox(bbox: BBox, mult: float) -> BBox:
     NOTE: does not check if the expanded bbox is within the image bounds.
     """
     rmin, cmin, rmax, cmax = bbox
-    rcenter = (rmin + rmax) // 2
-    ccenter = (cmin + cmax) // 2
-    rsize = int((rmax - rmin) * mult)
-    csize = int((cmax - cmin) * mult)
-    rmin, rmax = rcenter - rsize // 2, rcenter + rsize // 2
-    cmin, cmax = ccenter - csize // 2, ccenter + csize // 2
-    return rmin, cmin, rmax, cmax
+    rcenter = (rmin + rmax) / 2
+    ccenter = (cmin + cmax) / 2
+    rsize = (rmax - rmin) * mult
+    csize = (cmax - cmin) * mult
+    rmin, rmax = rcenter - rsize / 2, rcenter + rsize / 2
+    cmin, cmax = ccenter - csize / 2, ccenter + csize / 2
+    return int(rmin), int(cmin), int(rmax), int(cmax)
 
 
 def deduplicate_bboxes(bboxes: list[BBox], iou=0.85, return_indices=False) -> BBox:
