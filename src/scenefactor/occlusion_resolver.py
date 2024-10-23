@@ -65,14 +65,16 @@ class OcclusionResolver:
 
             # obtain occulsion information for each pair of labels
             labels = defaultdict(dict)
+            invalid = set()
             for label in np.unique(imask):
-                if label == INSTANCE_BACKGROUND:
-                    continue
-                labels[label]['adjacent'] = {}
+                if label == INSTANCE_BACKGROUND or np.sum(imask == label) < self.model_segmenter.config.min_area:
+                    invalid.add(label)
+                else:
+                    labels[label]['adjacent'] = {}
             
             for label1, label2 in itertools.combinations(np.unique(imask), 2):
-                if label1 == INSTANCE_BACKGROUND or \
-                   label2 == INSTANCE_BACKGROUND:
+                if label1 in invalid or \
+                   label2 in invalid:
                     continue
                 data = self.resolve(image, imask, label1, label2)
                 if data is None:
@@ -92,8 +94,8 @@ class OcclusionResolver:
                 for label2, data in info['adjacent'].items():
                     occluded_mask |= data['bmask1_delta']
                 info.update({
-                    'occluded_area': occluded_mask.sum(),
-                    'occluded_mask': occluded_mask,
+                    'occlusion_area': occluded_mask.sum(),
+                    'occlusion_mask': occluded_mask,
                 })
             
             # combine occlusion information to get per label metrics
@@ -110,14 +112,14 @@ class OcclusionResolver:
                     occluded_cost += min(ratio1 / ratio2, 10)
                 occluded_cost = occluded_cost / n if n > 0 else 0
                 labels_processed[label1] = info
-                labels_processed[label1]['occluded_cost'] = occluded_cost
+                labels_processed[label1]['occlusion_cost'] = occluded_cost
                 labels_processed[label1]['valid'] = not intersect_border(label1)
             
             # for k, v in labels_processed.items():
             #     print('--------------------------------------------')
             #     print('Label:', k)
-            #     print(v['occluded_cost'])
-            #     print(v['occluded_area'])
+            #     print(v['occlusion_cost'])
+            #     print(v['occlusion_area'])
             #     print(v['valid'])
                 
             frames.append(labels_processed)
@@ -219,7 +221,7 @@ if __name__ == '__main__':
 
     from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
     reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
-    sequence = reader.read(slice=(0, -1, 250))
+    sequence = reader.read(slice=(0, 100, 250))
 
     # from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
     # reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0000')
