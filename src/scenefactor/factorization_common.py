@@ -1,15 +1,8 @@
-import pickle
-import os
-import shutil
-from pathlib import Path
-
-import cv2
 import numpy as np
 
-
-from src.scenefactor.data.common import NumpyTensor
-from src.scenefactor.data.sequence import FrameSequence
-from src.scenefactor.utils.geom import dialate_bmask
+from scenefactor.data.common import NumpyTensor
+from scenefactor.data.sequence import FrameSequence
+from scenefactor.utils.geom import dialate_bmask
 
 
 SEMANTIC_BACKGROUND = 0

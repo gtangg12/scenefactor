@@ -1,9 +1,11 @@
+import os
+
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence
-from scenefactor.models import ModelLama, ModelSamGrounded
+from scenefactor.models import ModelLama, ModelSam, ModelSamGrounded
 from scenefactor.utils.geom import *
 from scenefactor.utils.visualize import *
 from scenefactor.factorization_common import *
@@ -18,10 +20,10 @@ class SequenceInpainter:
         self.config = config
         self.model_inpainter = ModelLama(config.model_inpainter)
         self.model_segmenter = ModelSamGrounded(config.model_segmenter)
+        self.visualizations_path = f'{self.config.cache}/visualizations' if 'cache' in self.config else None
 
-    def __call__(self, sequence: FrameSequence, labels_to_inpaint: set[int], iteration: int) -> FrameSequence:
+    def process_sequence(self, sequence: FrameSequence, labels_to_inpaint: set[int]) -> FrameSequence:
         """
-        NOTE:: we do not propagate inpainting e.g. using NeRF since image to 3d involves only one frame
         """
         sequence_updated = sequence.clone()
 
@@ -40,38 +42,11 @@ class SequenceInpainter:
 
             labels_mask = (~bmask_input & bmask_label) & dialate_bmask(intersection, radius)
             labels, counts = np.unique(imask_input[labels_mask], return_counts=True)
-            counts = counts[labels != 0] # ignore labels to be inpainted and dead labels
-            labels = labels[labels != 0]
+            counts = counts[labels != -1] # ignore dead labels
+            labels = labels[labels != -1]
             if len(labels) == 0:
-                return 0 # dead label that will result in occluded object not being activated from this frame
+                return -1 # dead label that will result in occluded object not being activated from this frame
             imask_paint[intersection] = labels[np.argmax(counts)]
-
-        def compute_inpaint_radius(
-            bmask: NumpyTensor['h', 'w'], 
-            imask: NumpyTensor['h', 'w'], ratio: float, clip_min=15, clip_max=75, bound_iterations=20, bound_threshold=5
-        ) -> int:
-            """
-            """
-            # assume bmask is a circle: r = sqrt(VOL / pi)(sqrt(c) - 1)
-            assert ratio > 1
-            radius = int(np.sqrt(np.sum(bmask) / np.pi * (ratio - 1)))
-            radius = int(np.clip(radius, clip_min, clip_max))
-
-            # ensure dialation doesn't overpaint non adjacent regions
-            num_labels = len(np.unique(imask[dialate_bmask(bmask, clip_min)]))
-            lo = 0
-            hi = radius
-            for _ in range(bound_iterations):
-                mid = (lo + hi) // 2
-                num_labels_current = len(np.unique(imask[dialate_bmask(bmask, mid)]))
-                if num_labels_current > num_labels:
-                    hi = mid
-                else:
-                    lo = mid
-                if hi - lo < bound_threshold:
-                    break
-            radius = min(radius, lo)
-            return radius
 
         def inpaint(index: int, downsample=2):
             """
@@ -79,9 +54,9 @@ class SequenceInpainter:
             image = np.array(sequence.images[index])
             imask = np.array(sequence.imasks[index])
             
-            bmask = np.zeros_like(sequence.imasks[index])
+            bmask = np.zeros_like(imask)
             for label in labels_to_inpaint:
-                bmask_label = sequence.imasks[index] == label
+                bmask_label = imask == label
                 bmask_label = dialate_bmask(bmask_label, compute_inpaint_radius(bmask_label, imask, ratio=1.5))
                 bmask |= bmask_label
             if not np.any(bmask):
@@ -108,8 +83,8 @@ class SequenceInpainter:
             bmask_input = bmask_input.astype(bool)
             for i, bmask_label in enumerate(bmask_model):
                 # predict separately for each sam bmask connected component for better locality
-                for j, bmask_component in enumerate(connected_components(bmask_label)):
-                        predict_label(imask_input, bmask_input, imask_paint, bmask_component)
+                for j, bmask_label_component in enumerate(connected_components(bmask_label)):
+                        predict_label(imask_input, bmask_input, imask_paint, bmask_label_component)
             
             # Upsample to original size
             image_paint = cv2.resize(image_paint, (W, H))
@@ -124,13 +99,12 @@ class SequenceInpainter:
             sequence_updated.images[index] = image_paint
             sequence_updated.imasks[index] = imask_paint
             
-            if self.config.visualize:
-                visualizations_path = f'{self.config.cache}/visualizations'
-                visaulizations_tail = f'iteration_{iteration}_index_{index}'
-                visualize_image (image_paint).save(f'{visualizations_path}/image_paint_{visaulizations_tail}.png')
-                visualize_cmask (imask_paint).save(f'{visualizations_path}/imask_paint_{visaulizations_tail}.png')
-                visualize_bmask (bmask_input).save(f'{visualizations_path}/bmask_input_{visaulizations_tail}.png')
-                visualize_bmasks(bmask_model).save(f'{visualizations_path}/bmask_model_{visaulizations_tail}.png')
+            if self.visualizations_path is not None:
+                visualize_image (image)      .save(f'{self.visualizations_path}/index_{index}_image.png')
+                visualize_image (image_paint).save(f'{self.visualizations_path}/index_{index}_image_paint.png')
+                visualize_cmask (imask_paint).save(f'{self.visualizations_path}/index_{index}_imask_paint.png')
+                visualize_bmask (bmask_input).save(f'{self.visualizations_path}/index_{index}_bmask_input.png')
+                visualize_bmasks(bmask_model).save(f'{self.visualizations_path}/index_{index}_bmask_model.png')
 
         for i in tqdm(range(len(sequence))):
             inpaint(i)

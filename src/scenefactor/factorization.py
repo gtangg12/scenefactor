@@ -1,4 +1,6 @@
 import os
+import shutil
+from pathlib import Path
 from collections import defaultdict
 from termcolor import colored
 
@@ -6,20 +8,20 @@ import torch
 from omegaconf import OmegaConf
 from trimesh.base import Trimesh
 
-from scenefactor.data.sequence import FrameSequence, compute_instance2semantic_label_mapping
-from scenefactor.factorization_extractor import SequenceExtractor
-from scenefactor.factorization_inpainter import SequenceInpainter
-from scenefactor.factorization_generator import SequenceGenerator
+from scenefactor.data.sequence import FrameSequence
+from scenefactor.models import ModelInstantMesh
+from scenefactor.occlusion_resolver import OcclusionResolver
+from scenefactor.sequence_extractor import SequenceExtractor
+from scenefactor.sequence_inpainter import SequenceInpainter
 from scenefactor.factorization_common import *
 
 
-def reset_cache(module):
+def reset_cache(path):
     """
     """
-    if module.config.cache.exists():
-        shutil.rmtree(module.config.cache)
-    os.makedirs(module.config.cache                 , exist_ok=True)
-    os.makedirs(module.config.cache/'visualizations', exist_ok=True)
+    if Path(path).exists():
+        shutil.rmtree(path)
+    os.makedirs(path, exist_ok=True)
 
 
 class SequenceFactorization:
@@ -29,6 +31,7 @@ class SequenceFactorization:
         """
         """
         self.config = OmegaConf.create(config)
+        self.config.occlusion.cache = Path(self.config.cache) / 'occlusion'
         self.config.extractor.cache = Path(self.config.cache) / 'extractor'
         self.config.inpainter.cache = Path(self.config.cache) / 'inpainter'
         self.config.generator.cache = Path(self.config.cache) / 'generator'
@@ -36,55 +39,70 @@ class SequenceFactorization:
     def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
         """
         """
-        sequence = sequence.clone()
-
-        instance2semantic = compute_instance2semantic_label_mapping(
-            sequence, 
-            instance_background=INSTANCE_BACKGROUND, 
-            semantic_background=SEMANTIC_BACKGROUND
-        )
-        
+        reset_cache(self.config.cache)
+        occlusion = OcclusionResolver(self.config.occlusion)
         extractor = SequenceExtractor(self.config.extractor)
         inpainter = SequenceInpainter(self.config.inpainter)
-        reset_cache(extractor)
-        reset_cache(inpainter)
 
-        images_total, sequences_total = defaultdict(dict), {0: sequence.clone()}
+        def set_visualizations_dirs(iteration: int):
+            """
+            """
+            occlusion.visualizations_path = Path(occlusion.visualizations_path) / f'iteration_{iteration}'
+            extractor.visualizations_path = Path(extractor.visualizations_path) / f'iteration_{iteration}'
+            inpainter.visualizations_path = Path(inpainter.visualizations_path) / f'iteration_{iteration}'
+            reset_cache(occlusion.visualizations_path)
+            reset_cache(extractor.visualizations_path)
+            reset_cache(inpainter.visualizations_path)
+        
+        def pop_visualizations_dirs():
+            """
+            """
+            occlusion.visualizations_path = occlusion.visualizations_path.parent
+            extractor.visualizations_path = extractor.visualizations_path.parent
+            inpainter.visualizations_path = inpainter.visualizations_path.parent
+        
+        sequence = sequence.clone()
+
+        crops, sequences = defaultdict(dict), {0: sequence.clone()}
         for i in range(self.config.max_iterations):
-            images = extractor(sequence, instance2semantic, iteration=i)
+            set_visualizations_dirs(i)
+            frames = occlusion.process_sequence(sequence)
+            images = extractor.process_sequence(sequence, frames)
             print(colored(f'Iteration {i} extracted {len(images)} mesh image crops, now inpainting sequence', 'green'))
             if len(images) == 0:
                 break
-            sequence = inpainter(sequence, images.keys(), iteration=i)
-            images_total[i], sequences_total[i] = images, sequence.clone()
+            crops.update(images)
+            sequence = inpainter.process_sequence(sequence, images.keys())
+            sequences[i + 1] = sequence.clone()
+            pop_visualizations_dirs()
         exit()
-        del extractor, inpainter # Not enough memory to load all modules at once
+        del occlusion # Not enough memory to load all modules at once
+        del extractor
+        del inpainter
         torch.cuda.empty_cache() # Apparently this is necessary (unlike in InstantMesh/run.py)
         
-        generator = SequenceGenerator(self.config.generator)
+        generator = ModelInstantMesh(self.config.generator)
         reset_cache(generator)
-
-        meshes_total = generator(images_total, instance2semantic)
-        return meshes_total
+        meshes = {label: generator(crop) for label, crop in crops.items()}
+        return meshes
 
 
 if __name__ == '__main__':
     from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
+    reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
+    sequence = reader.read(slice=(0, -1, 100))
 
-    reader = ReplicaVMapFrameSequenceReader(
-        base_dir='/home/gtangg12/data/replica-vmap', 
-        save_dir='/home/gtangg12/data/scenefactor/replica-vmap', 
-        name='room_0',
-    )
-    sequence = reader.read(slice=(0, -1, 50))
+    # from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
+    # reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0001')
+    # sequence = reader.read(slice=(0, 100, 25))
+    
+    config = OmegaConf.load('configs/factorization.yaml')
 
-    instance2semantic = compute_instance2semantic_label_mapping(sequence, semantic_background=0)
+    factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization.yaml')
+    factorization_config['cache'] = 'outputs_factorization'
+    factorization = SequenceFactorization(factorization_config)
 
-    sequence_factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_replica_vmap.yaml')
-    sequence_factorization_config['cache'] = reader.save_dir / 'factorization'
-    sequence_factorization = SequenceFactorization(sequence_factorization_config)
-
-    meshes = sequence_factorization(sequence)
+    meshes = factorization(sequence)
 
 
 '''

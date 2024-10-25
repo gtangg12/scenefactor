@@ -114,7 +114,7 @@ class OcclusionResolver:
                 labels_processed[label1] = info
                 labels_processed[label1]['occlusion_cost'] = occluded_cost
                 labels_processed[label1]['valid'] = not intersect_border(label1)
-            
+                labels_processed[label1]['index'] = i 
             # for k, v in labels_processed.items():
             #     print('--------------------------------------------')
             #     print('Label:', k)
@@ -155,8 +155,8 @@ class OcclusionResolver:
             visualize_bmask(bmask1).save(f'{self.visualizations_path}/{label1}_{label2}_bmask1.png')
             visualize_bmask(bmask2).save(f'{self.visualizations_path}/{label1}_{label2}_bmask2.png')
 
-        bmask1_fixed, image1_paint = self.repair(image, bmask1, bmask2)
-        bmask2_fixed, image2_paint = self.repair(image, bmask2, bmask1)
+        bmask1_fixed, image1_paint, prompt1 = self.repair(image, bmask1, bmask2)
+        bmask2_fixed, image2_paint, prompt2 = self.repair(image, bmask2, bmask1)
         bmask1_delta = bmask1_fixed & bmask2
         bmask2_delta = bmask2_fixed & bmask1
         bmask1_ratio = np.sum(bmask1_delta) / np.sum(bmask2)
@@ -164,9 +164,9 @@ class OcclusionResolver:
 
         if self.visualizations_path is not None:
             visualize_bmask(bmask1_fixed).save(f'{self.visualizations_path}/{label1}_{label2}_bmask1_fixed.png')
-            visualize_image(image1_paint).save(f'{self.visualizations_path}/{label1}_{label2}_image1_paint.png')
             visualize_bmask(bmask2_fixed).save(f'{self.visualizations_path}/{label1}_{label2}_bmask2_fixed.png')
-            visualize_image(image2_paint).save(f'{self.visualizations_path}/{label1}_{label2}_image2_paint.png')
+            plot_points(visualize_image(image1_paint), prompt1['point_coords']).save(f'{self.visualizations_path}/{label1}_{label2}_image1_paint.png')
+            plot_points(visualize_image(image2_paint), prompt2['point_coords']).save(f'{self.visualizations_path}/{label1}_{label2}_image2_paint.png')
 
         return {
             'bmask1_delta': resize_bmask(bmask1_delta, (W, H)),
@@ -186,7 +186,11 @@ class OcclusionResolver:
         """
         sbmask = erode_bmask(bmask1, radius=self.config.segmenter_erosion)
         # thinner areas representation boosted via prunning instead of random sampling
-        points = bmask_sample_points_grid(sbmask, 10, std=2)
+        points = bmask_sample_points_grid(
+            sbmask, 
+            self.config.segmenter_sample_grid, 
+            self.config.segmenter_sample_grid_std
+        )
         points = np.random.permutation(points)[:self.config.segmenter_num_samples]
         labels = np.ones(len(points))
         prompt = {
@@ -194,7 +198,10 @@ class OcclusionResolver:
             'point_labels': labels, 'multimask_output': False
         }
         image_paint = self.model_inpainter(
-            image, bmask2, dialate=self.config.inpainter_dialation, iterations=self.config.inpainter_iterations)
+            image, bmask2, 
+            self.config.inpainter_dialation, 
+            self.config.inpainter_iterations
+        )
         bmask_fixed = self.model_segmenter(image_paint, prompt=prompt)
         if bmask_fixed is None:
             bmask_fixed = bmask1 # TODO hack for edge case
@@ -208,7 +215,7 @@ class OcclusionResolver:
             bmask_fixed |= c
         bmask_fixed |= bmask1 # sometimes overerosion
 
-        return bmask_fixed, image_paint
+        return bmask_fixed, image_paint, prompt
 
 
 if __name__ == '__main__':
