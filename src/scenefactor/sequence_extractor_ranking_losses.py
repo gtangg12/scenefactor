@@ -81,8 +81,8 @@ class VLMRankingLoss(RankingLoss):
         input.extend([Image.fromarray(image) for image in images])
         response = self.model(input, temperature=1e-6) # see OpenAI documentation on temperature = 0
         response = unpack_content(response)
-        print('-------------------------------------------------------------------------------------------')
-        print(response)
+        #print()
+        #print(response)
         match = re.search('The best view is view_(\d+)', response)
         if match:
             index = int(match.group(1))

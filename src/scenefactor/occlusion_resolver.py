@@ -117,12 +117,12 @@ class OcclusionResolver:
                 labels_processed[label1]['occlusion_cost'] = occluded_cost
                 labels_processed[label1]['valid'] = not intersect_border(label1)
                 labels_processed[label1]['index'] = i 
-            for k, v in labels_processed.items():
-                print('--------------------------------------------')
-                print('Label:', k)
-                print(v['occlusion_cost'])
-                print(v['occlusion_area'])
-                print(v['valid'])
+            # for k, v in labels_processed.items():
+            #     print('--------------------------------------------')
+            #     print('Label:', k)
+            #     print(v['occlusion_cost'])
+            #     print(v['occlusion_area'])
+            #     print(v['valid'])
                 
             frames.append(labels_processed)
 
