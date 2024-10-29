@@ -4,6 +4,8 @@ outputs_factorization/
 outputs_factorization_old/
 tests/sequence
 tmp/
+renders/
+camera_paths/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
