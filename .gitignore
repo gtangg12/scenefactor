@@ -1,6 +1,7 @@
 checkpoints/
 outputs/
 outputs_factorization/
+outputs_factorization_old/
 tests/sequence
 tmp/
 

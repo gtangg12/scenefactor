@@ -91,14 +91,13 @@ if __name__ == '__main__':
     from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
     reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
     sequence = reader.read(slice=(0, -1, 100))
+    factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_replica_vmap.yaml')
 
     # from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
     # reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0001')
-    # sequence = reader.read(slice=(0, 100, 25))
-    
-    config = OmegaConf.load('configs/factorization.yaml')
+    # sequence = reader.read(slice=(0, -1, 10))
+    # factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_graspnet.yaml')
 
-    factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization.yaml')
     factorization_config['cache'] = 'outputs_factorization'
     factorization = SequenceFactorization(factorization_config)
 

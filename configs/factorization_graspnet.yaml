@@ -2,19 +2,22 @@ occlusion:
   segmenter:
     checkpoint: /home/gtangg12/scenefactor/checkpoints/sam_hq_vit_h.pth
     mode: pred
-    min_area: 256
+    min_area: 2048
   inpainter:
     checkpoint: /home/gtangg12/scenefactor/checkpoints/big-lama
   inpainter_dialation: 5
   inpainter_iterations: 1
   segmenter_num_samples: 32
-  segmenter_sample_grid: 5
+  segmenter_sample_grid: 2
   segmenter_sample_grid_std: 1
   segmenter_erosion: 5
   occlusion_threshold_ratio: 0.025
 
 extractor:
-  occlusion_threshold_cost: 0.5
+  occlusion_threshold_cost: 0.25
+  loss:
+    loss_vlm:
+      model: gpt-4o
 
 inpainter:
   model_inpainter:

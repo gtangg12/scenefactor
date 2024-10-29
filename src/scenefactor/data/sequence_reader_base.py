@@ -23,6 +23,8 @@ class FrameSequenceReader(ABC):
         self.base_dir = Path(base_dir)
         self.data_dir = Path(base_dir) / name
         self.metadata = self.load_metadata()
+        self.metadata['sequence_name'] = name
+        self.metadata['sequence_base'] = base_dir
 
     def sequence_names(self):
         """

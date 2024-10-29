@@ -1,0 +1,49 @@
+occlusion:
+  segmenter:
+    checkpoint: /home/gtangg12/scenefactor/checkpoints/sam_hq_vit_h.pth
+    mode: pred
+    min_area: 256
+  inpainter:
+    checkpoint: /home/gtangg12/scenefactor/checkpoints/big-lama
+  inpainter_dialation: 5
+  inpainter_iterations: 1
+  segmenter_num_samples: 32
+  segmenter_sample_grid: 5
+  segmenter_sample_grid_std: 1
+  segmenter_erosion: 5
+  occlusion_threshold_ratio: 0.025
+
+extractor:
+  occlusion_threshold_cost: 0.5
+  loss:
+    loss_vlm:
+      model: gpt-4o
+
+inpainter:
+  model_inpainter:
+    checkpoint: /home/gtangg12/scenefactor/checkpoints/big-lama
+  model_segmenter:
+    ram:
+      checkpoint: /home/gtangg12/scenefactor/checkpoints/ram_plus_swin_large_14m.pth
+    grounding_dino:
+      checkpoint: /home/gtangg12/scenefactor/checkpoints/groundingdino_swinb_cogcoor.pth
+      checkpoint_config: GroundingDINO_SwinB_cfg.py
+      bbox_threshold: 0.25
+      text_threshold: 0.25
+    sam_pred:
+      checkpoint: /home/gtangg12/scenefactor/checkpoints/sam_hq_vit_h.pth
+      mode: pred
+      engine_config: {}
+    sam_auto:
+      checkpoint: /home/gtangg12/scenefactor/checkpoints/sam_hq_vit_h.pth
+      mode: auto
+      engine_config: {}
+    include_sam_auto: True
+    min_area: 256
+
+generator:
+    model_config: configs/instant-mesh-large.yaml
+    input_path: examples/input.png
+    tmesh_path: outputs/instant-mesh-large/meshes/input.obj
+
+max_iterations: 5

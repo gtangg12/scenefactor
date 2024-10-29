@@ -25,6 +25,15 @@ def tensor_to_image(tensor: TorchTensor['batch', 'channels', 'h', 'w']) -> list[
     return list(tensor)
 
 
+def image_to_tensor(image: NumpyTensor['...', 'h', 'w', 'channels']) -> TorchTensor['B', 'channels', 'h', 'w']:
+    """
+    Convert image to tensor.
+    """
+    image = image.transpose(0, 3, 1, 2) if image.ndim == 4 else image.transpose(2, 0, 1)[None, ...]
+    image = image / 255
+    return torch.from_numpy(image).float()
+
+
 def untile(grid: Tensor['h', 'w', 'channels'], H: int, W: int) -> Tensor['n', 'h // H', 'w // W', 'channels']:
     """
     """

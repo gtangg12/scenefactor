@@ -1,5 +1,5 @@
-import os
-
+import torch
+import torch.nn.functional as F
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
@@ -9,35 +9,7 @@ from scenefactor.models import ModelLama, ModelSam, ModelSamGrounded
 from scenefactor.utils.geom import *
 from scenefactor.utils.visualize import *
 from scenefactor.factorization_common import *
-
-
-def compute_inpaint_radius(
-    bmask: NumpyTensor['h', 'w'], 
-    imask: NumpyTensor['h', 'w'], 
-    ratio: float, clip_min=15, clip_max=75, bound_iterations=20, bound_threshold=5
-) -> int:
-    """
-    """
-    # assume bmask is a circle: r = sqrt(VOL / pi)(sqrt(c) - 1)
-    assert ratio > 1
-    radius = int(np.sqrt(np.sum(bmask) / np.pi * (ratio - 1)))
-    radius = int(np.clip(radius, clip_min, clip_max))
-
-    # ensure dialation doesn't overpaint non adjacent regions
-    num_labels = len(np.unique(imask[dialate_bmask(bmask, clip_min)]))
-    lo = 0
-    hi = radius
-    for _ in range(bound_iterations):
-        mid = (lo + hi) // 2
-        num_labels_current = len(np.unique(imask[dialate_bmask(bmask, mid)]))
-        if num_labels_current > num_labels:
-            hi = mid
-        else:
-            lo = mid
-        if hi - lo < bound_threshold:
-            break
-    radius = min(radius, lo)
-    return radius
+from scenefactor.renderer.renderer_implicit import RendererImplicit
 
 
 class SequenceInpainter:
@@ -51,10 +23,38 @@ class SequenceInpainter:
         self.model_segmenter = ModelSamGrounded(config.model_segmenter)
         self.visualizations_path = f'{self.config.cache}/visualizations' if 'cache' in self.config else None
 
-    def process_sequence(self, sequence: FrameSequence, labels_to_inpaint: set[int]) -> FrameSequence:
+    def process_sequence_no_refine(self, sequence: FrameSequence, labels_to_inpaint: set[int], inpaint_radius_ratio=1.5) -> FrameSequence:
         """
         """
         sequence_updated = sequence.clone()
+
+        def compute_inpaint_radius(
+            bmask: NumpyTensor['h', 'w'], 
+            imask: NumpyTensor['h', 'w'], 
+            ratio: float, clip_min=15, clip_max=75, bound_iterations=20, bound_threshold=5
+        ) -> int:
+            """
+            """
+            # assume bmask is a circle: r = sqrt(VOL / pi)(sqrt(c) - 1)
+            assert ratio > 1
+            radius = int(np.sqrt(np.sum(bmask) / np.pi * (ratio - 1)))
+            radius = int(np.clip(radius, clip_min, clip_max))
+
+            # ensure dialation doesn't overpaint non adjacent regions
+            num_labels = len(np.unique(imask[dialate_bmask(bmask, clip_min)]))
+            lo = 0
+            hi = radius
+            for _ in range(bound_iterations):
+                mid = (lo + hi) // 2
+                num_labels_current = len(np.unique(imask[dialate_bmask(bmask, mid)]))
+                if num_labels_current > num_labels:
+                    hi = mid
+                else:
+                    lo = mid
+                if hi - lo < bound_threshold:
+                    break
+            radius = min(radius, lo)
+            return radius
 
         def predict_label(
             imask_input: NumpyTensor['h', 'w'],
@@ -86,7 +86,7 @@ class SequenceInpainter:
             bmask = np.zeros_like(imask)
             for label in labels_to_inpaint:
                 bmask_label = imask == label
-                bmask_label = dialate_bmask(bmask_label, compute_inpaint_radius(bmask_label, imask, ratio=1.5))
+                bmask_label = dialate_bmask(bmask_label, compute_inpaint_radius(bmask_label, imask, ratio=inpaint_radius_ratio))
                 bmask |= bmask_label
             if not np.any(bmask):
                 return
@@ -138,3 +138,35 @@ class SequenceInpainter:
         for i in tqdm(range(len(sequence))):
             inpaint(i)
         return sequence_updated
+    
+    def process_sequence_gaussian_splatting_refine(self, sequence: FrameSequence, labels_to_inpaint: set[int], feedback=False) -> FrameSequence:
+        """
+        TODO feedback
+        """
+        image_metadata = { # feedback metadata
+            index: {'inpaint_radius_ratio': 1.5, 'delta': None} for index in range(len(sequence))
+        }
+        for i in range(self.config.get('gaussian_splatting_refine_max_iterations', 1)):
+            sequence = self.process_sequence(sequence, labels_to_inpaint)     
+            renderer = RendererImplicit(
+                sequence,
+                sequence_path=self.config.gaussian_splatting_sequence_path / sequence.metadata['name'] / f'iteration_{i}',
+                sequence_name=sequence.metadata['name'] + f'_iteration_{i}'
+            )
+            renderer.train()
+            renderer_images = renderer.render(sequence.poses)['RGB']
+            sequence.images = renderer_images
+            if self.visualizations_path is not None:
+                for index, image in enumerate(renderer_images):
+                    visualize_image(image).save(f'{self.visualizations_path}/index_{index}_image_refined.png')
+        return sequence
+
+    def process_sequence(self, sequence: FrameSequence, labels_to_inpaint: set[int], refine='none') -> FrameSequence:
+        """
+        """
+        methods = {
+            'none'                       : lambda *args: self.process_sequence_no_refine(*args),
+            'gaussian_splatting'         : lambda *args: self.process_sequence_gaussian_splatting_refine(*args),
+            'gaussian_splatting_feedback': lambda *args: self.process_sequence_gaussian_splatting_refine(*args, feedback=True)
+        }
+        return methods[refine](sequence, labels_to_inpaint)

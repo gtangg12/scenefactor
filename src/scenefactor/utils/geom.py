@@ -203,7 +203,7 @@ def compute_holes(bmask: NumpyTensor['h', 'w']) -> list[tuple[NumpyTensor['h', '
 def remove_background(
     image: NumpyTensor['h', 'w', 3], 
     bmask: NumpyTensor['h', 'w'], 
-    background=255, outline_thickness=1
+    background=0, outline_thickness=1
 ) -> NumpyTensor['h', 'w', 3]:
     """
     """

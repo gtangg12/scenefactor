@@ -63,11 +63,14 @@ class OcclusionResolver:
             def intersect_border(label):
                 return np.any(dialate_bmask(imask == label, radius=EPSILON_RADIUS) & BORDER)
 
+            def valid_size(label):
+                return np.sum(imask == label) >= self.config.segmenter.min_area
+
             # obtain occulsion information for each pair of labels
             labels = defaultdict(dict)
             invalid = set()
             for label in np.unique(imask):
-                if label == INSTANCE_BACKGROUND or np.sum(imask == label) < self.model_segmenter.config.min_area:
+                if label == INSTANCE_BACKGROUND or not valid_size(label):
                     invalid.add(label)
                 else:
                     labels[label]['adjacent'] = {}
@@ -101,26 +104,25 @@ class OcclusionResolver:
             # combine occlusion information to get per label metrics
             labels_processed = {}
             for label1, info in labels.items():
-                occluded_cost = 0
-                n = len(info['adjacent'])
+                occluded_costs = []
                 for label2, data in info['adjacent'].items():
                     ratio1 = data['bmask1_ratio']
                     ratio2 = data['bmask2_ratio']
                     if ratio1 < self.config.occlusion_threshold_ratio and \
                        ratio2 < self.config.occlusion_threshold_ratio:
                         continue
-                    occluded_cost += min(ratio1 / ratio2, 10)
-                occluded_cost = occluded_cost / n if n > 0 else 0
+                    occluded_costs.append(min(ratio1 / ratio2, 10))
+                occluded_cost = 0 if len(occluded_costs) == 0 else np.max(occluded_costs)
                 labels_processed[label1] = info
                 labels_processed[label1]['occlusion_cost'] = occluded_cost
                 labels_processed[label1]['valid'] = not intersect_border(label1)
                 labels_processed[label1]['index'] = i 
-            # for k, v in labels_processed.items():
-            #     print('--------------------------------------------')
-            #     print('Label:', k)
-            #     print(v['occlusion_cost'])
-            #     print(v['occlusion_area'])
-            #     print(v['valid'])
+            for k, v in labels_processed.items():
+                print('--------------------------------------------')
+                print('Label:', k)
+                print(v['occlusion_cost'])
+                print(v['occlusion_area'])
+                print(v['valid'])
                 
             frames.append(labels_processed)
 
@@ -155,8 +157,8 @@ class OcclusionResolver:
             visualize_bmask(bmask1).save(f'{self.visualizations_path}/{label1}_{label2}_bmask1.png')
             visualize_bmask(bmask2).save(f'{self.visualizations_path}/{label1}_{label2}_bmask2.png')
 
-        bmask1_fixed, image1_paint, prompt1 = self.repair(image, bmask1, bmask2)
-        bmask2_fixed, image2_paint, prompt2 = self.repair(image, bmask2, bmask1)
+        bmask1_fixed, image1_paint, prompt1 = self.repair(image, imask, bmask1, bmask2)
+        bmask2_fixed, image2_paint, prompt2 = self.repair(image, imask, bmask2, bmask1)
         bmask1_delta = bmask1_fixed & bmask2
         bmask2_delta = bmask2_fixed & bmask1
         bmask1_ratio = np.sum(bmask1_delta) / np.sum(bmask2)
@@ -178,6 +180,7 @@ class OcclusionResolver:
     def repair(
         self,
         image : NumpyTensor['h', 'w', 3],
+        imask : NumpyTensor['h', 'w'],
         bmask1: NumpyTensor['h', 'w'],
         bmask2: NumpyTensor['h', 'w'],
     ) -> tuple:
@@ -199,7 +202,7 @@ class OcclusionResolver:
         }
         image_paint = self.model_inpainter(
             image, bmask2, 
-            self.config.inpainter_dialation, 
+            self.config.inpainter_dialation,
             self.config.inpainter_iterations
         )
         bmask_fixed = self.model_segmenter(image_paint, prompt=prompt)
@@ -226,15 +229,15 @@ if __name__ == '__main__':
         shutil.rmtree('tmp')
     os.makedirs('tmp')
 
-    from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
-    reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
-    sequence = reader.read(slice=(0, 100, 250))
+    # from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
+    # reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
+    # sequence = reader.read(slice=(0, 100, 250))
 
-    # from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
-    # reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0000')
-    # sequence = reader.read(slice=(0, 200, 25))
+    from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
+    reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0000')
+    sequence = reader.read(slice=(0, 200, 25))
 
-    config = OmegaConf.load('configs/factorization.yaml')
+    config = OmegaConf.load('configs/factorization_graspnet.yaml')
     config.occlusion.cache = Path('tmp')
 
     import time
