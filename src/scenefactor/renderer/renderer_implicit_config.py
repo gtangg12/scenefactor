@@ -1,12 +1,14 @@
+import yaml
+
 from nerfstudio.configs.base_config import ViewerConfig
 from nerfstudio.engine.trainer import TrainerConfig
 from nerfstudio.engine.optimizers import AdamOptimizerConfig
 from nerfstudio.engine.schedulers import ExponentialDecaySchedulerConfig
 from nerfstudio.plugins.types import MethodSpecification
+from nerfstudio.models.splatfacto import SplatfactoModelConfig
+from nerfstudio.pipelines.base_pipeline import VanillaPipelineConfig
 
-from scenefactor.renderer.renderer_implicit_pipeline import ScenefactorPipelineConfig
 from scenefactor.renderer.renderer_implicit_data import ScenefactorDataParserConfig, ScenefactorDataManagerConfig
-from scenefactor.renderer.renderer_implicit_model import ScenefactorModelConfig
 
 """
 pip install gsplat==1.4.0+pt24cu121 --index-url https://docs.gsplat.studio/whl
@@ -21,11 +23,11 @@ ScenefactorMethod = MethodSpecification(
         steps_per_eval_all_images=10000,
         max_num_iterations=10000,
         mixed_precision=False,
-        pipeline=ScenefactorPipelineConfig(
+        pipeline=VanillaPipelineConfig(
             datamanager=ScenefactorDataManagerConfig(
                 dataparser=ScenefactorDataParserConfig()
             ),
-            model=ScenefactorModelConfig(
+            model=SplatfactoModelConfig(
                 cull_alpha_thresh=0.005,
                 densify_grad_thresh=0.0005,
             ),

@@ -1,4 +1,4 @@
-import pickle
+import json
 from dataclasses import dataclass, field, asdict
 from functools import cached_property
 from pathlib import Path
@@ -37,11 +37,12 @@ class ScenefactorDataParserOutputs:
         """
         Save dataparser transforms for inference use.
         """
-        with open(path, 'wb') as f:
-            pickle.dump({
-                'dataparser_scale'    : self.dataparser_scale,
-                'dataparser_transform': self.dataparser_transform
-            }, f)
+        transforms = {
+            'dataparser_scale': self.dataparser_scale,
+            'dataparser_transform': self.dataparser_transform.tolist(),
+        }
+        with open(path, 'w') as f:
+            json.dump(transforms, f, indent=4)
 
 
 @dataclass
