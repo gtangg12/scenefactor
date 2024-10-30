@@ -24,6 +24,16 @@ def reset_cache(path):
     os.makedirs(path, exist_ok=True)
 
 
+def make_visualization_dir(cache: Path | str, iteration: int = None) -> Path:
+    """
+    """
+    path = Path(cache) / 'visualizations'
+    if iteration is not None:
+        path = path / f'iteration_{iteration}'
+    reset_cache(path)
+    return path
+
+
 class SequenceFactorization:
     """
     """
@@ -31,50 +41,39 @@ class SequenceFactorization:
         """
         """
         self.config = OmegaConf.create(config)
-        self.config.occlusion.cache = Path(self.config.cache) / 'occlusion'
-        self.config.extractor.cache = Path(self.config.cache) / 'extractor'
-        self.config.inpainter.cache = Path(self.config.cache) / 'inpainter'
-        self.config.generator.cache = Path(self.config.cache) / 'generator'
+        self.occlusion_cache = Path(self.config.cache) / 'occlusion'
+        self.extractor_cache = Path(self.config.cache) / 'extractor'
+        self.inpainter_cache = Path(self.config.cache) / 'inpainter'
+        self.generator_cache = Path(self.config.cache) / 'generator'
 
     def __call__(self, sequence: FrameSequence) -> dict[int, Trimesh]:
         """
         """
-        reset_cache(self.config.cache)
+        reset_cache(self.occlusion_cache)
+        reset_cache(self.extractor_cache)
+        reset_cache(self.inpainter_cache)
+        reset_cache(self.generator_cache)
         occlusion = OcclusionResolver(self.config.occlusion)
         extractor = SequenceExtractor(self.config.extractor)
         inpainter = SequenceInpainter(self.config.inpainter)
 
-        def set_visualizations_dirs(iteration: int):
-            """
-            """
-            occlusion.visualizations_path = Path(occlusion.visualizations_path) / f'iteration_{iteration}'
-            extractor.visualizations_path = Path(extractor.visualizations_path) / f'iteration_{iteration}'
-            inpainter.visualizations_path = Path(inpainter.visualizations_path) / f'iteration_{iteration}'
-            reset_cache(occlusion.visualizations_path)
-            reset_cache(extractor.visualizations_path)
-            reset_cache(inpainter.visualizations_path)
-        
-        def pop_visualizations_dirs():
-            """
-            """
-            occlusion.visualizations_path = occlusion.visualizations_path.parent
-            extractor.visualizations_path = extractor.visualizations_path.parent
-            inpainter.visualizations_path = inpainter.visualizations_path.parent
-        
         sequence = sequence.clone()
 
         crops, sequences = defaultdict(dict), {0: sequence.clone()}
+
         for i in range(self.config.max_iterations):
-            set_visualizations_dirs(i)
-            frames = occlusion.process_sequence(sequence)
-            images = extractor.process_sequence(sequence, frames)
+            occlusion_visualizations = make_visualization_dir(self.occlusion_cache, i) if self.config.visualize_occlusion else None
+            extractor_visualizations = make_visualization_dir(self.extractor_cache, i) if self.config.visualize_extractor else None
+            inpainter_visualizations = make_visualization_dir(self.inpainter_cache, i) if self.config.visualize_inpainter else None
+
+            frames = occlusion.process_sequence(sequence[::self.config.extractor_step]        , visualizations=occlusion_visualizations)
+            images = extractor.process_sequence(sequence[::self.config.extractor_step], frames, visualizations=extractor_visualizations)
             print(colored(f'Iteration {i} extracted {len(images)} mesh image crops, now inpainting sequence', 'green'))
             if len(images) == 0:
                 break
             crops.update(images)
-            sequence = inpainter.process_sequence(sequence, images.keys())
+            sequence = inpainter.process_sequence(sequence, images.keys(), visualizations=inpainter_visualizations)
             sequences[i + 1] = sequence.clone()
-            pop_visualizations_dirs()
         exit()
         del occlusion # Not enough memory to load all modules at once
         del extractor
@@ -82,21 +81,21 @@ class SequenceFactorization:
         torch.cuda.empty_cache() # Apparently this is necessary (unlike in InstantMesh/run.py)
         
         generator = ModelInstantMesh(self.config.generator)
-        reset_cache(generator)
+        generator_visualizations = make_visualization_dir(self.generator_cache) if self.config.visualize_generator else None
         meshes = {label: generator(crop) for label, crop in crops.items()}
         return meshes
 
 
 if __name__ == '__main__':
-    from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
-    reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
-    sequence = reader.read(slice=(0, -1, 100))
-    factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_replica_vmap.yaml')
+    # from scenefactor.data.sequence_reader_replica_vmap import ReplicaVMapFrameSequenceReader
+    # reader = ReplicaVMapFrameSequenceReader(base_dir='/home/gtangg12/data/replica-vmap', name='room_0')
+    # sequence = reader.read(slice=(0, -1, 100))
+    # factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_replica_vmap.yaml')
 
-    # from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
-    # reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0001')
-    # sequence = reader.read(slice=(0, -1, 10))
-    # factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_graspnet.yaml')
+    from scenefactor.data.sequence_reader_graspnet import GraspNetFrameSequenceReader
+    reader = GraspNetFrameSequenceReader(base_dir='/home/gtangg12/data/graspnet', name='scene_0001')
+    sequence = reader.read(slice=(0, 20, 5))
+    factorization_config = OmegaConf.load('/home/gtangg12/scenefactor/configs/factorization_graspnet.yaml')
 
     factorization_config['cache'] = 'outputs_factorization'
     factorization = SequenceFactorization(factorization_config)

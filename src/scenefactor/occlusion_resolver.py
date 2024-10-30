@@ -41,21 +41,21 @@ class OcclusionResolver:
         self.config = config
         self.model_inpainter = ModelLama(config.inpainter)
         self.model_segmenter = ModelSam (config.segmenter)
-        self.visualizations_path = self.config.cache / 'visualizations' if 'cache' in self.config else None
 
-    def process_sequence(self, sequence: FrameSequence) -> list[dict]:
+    def process_sequence(self, sequence: FrameSequence, visualizations: Path | str = None) -> list[dict]:
         """
-        """    
+        """
         frames = []
         for i in tqdm(range(len(sequence)), desc='Resolving occlusions'):
             image = sequence.images[i]
             imask = sequence.imasks[i]
 
-            if self.visualizations_path is not None:
-                self.visualizations_path = self.visualizations_path / f'{i:03}'
-                os.makedirs(self.visualizations_path, exist_ok=True)
-                visualize_image(image).save(f'{self.visualizations_path}/image.png')
-                visualize_cmask(imask).save(f'{self.visualizations_path}/imask.png')
+            visualizations_index = None
+            if visualizations:
+                visualizations_index = visualizations / f'{i:03}'
+                os.makedirs(visualizations_index, exist_ok=True)
+                visualize_image(image).save(f'{visualizations_index}/image.png')
+                visualize_cmask(imask).save(f'{visualizations_index}/imask.png')
 
             # compute labels that should not be processed
             BORDER = build_border(imask.shape)
@@ -79,7 +79,7 @@ class OcclusionResolver:
                 if label1 in invalid or \
                    label2 in invalid:
                     continue
-                data = self.resolve(image, imask, label1, label2)
+                data = self.resolve(image, imask, label1, label2, visualizations=visualizations_index)
                 if data is None:
                     continue
                 labels[label1]['adjacent'][label2] = data
@@ -125,9 +125,6 @@ class OcclusionResolver:
             #     print(v['valid'])
                 
             frames.append(labels_processed)
-
-            if self.visualizations_path is not None:
-                self.visualizations_path = self.visualizations_path.parent
         return frames
 
     def resolve(
@@ -136,6 +133,7 @@ class OcclusionResolver:
         imask: NumpyTensor['h', 'w'],
         label1: int,
         label2: int,
+        visualizations: Path | str = None
     ) -> dict:
         """
         """
@@ -152,10 +150,10 @@ class OcclusionResolver:
         
         bmask1 = imask == label1
         bmask2 = imask == label2
-        if self.visualizations_path is not None:
-            visualize_image(image) .save(f'{self.visualizations_path}/{label1}_{label2}_image.png')
-            visualize_bmask(bmask1).save(f'{self.visualizations_path}/{label1}_{label2}_bmask1.png')
-            visualize_bmask(bmask2).save(f'{self.visualizations_path}/{label1}_{label2}_bmask2.png')
+        if visualizations is not None:
+            visualize_image(image) .save(f'{visualizations}/{label1}_{label2}_image.png')
+            visualize_bmask(bmask1).save(f'{visualizations}/{label1}_{label2}_bmask1.png')
+            visualize_bmask(bmask2).save(f'{visualizations}/{label1}_{label2}_bmask2.png')
 
         bmask1_fixed, image1_paint, prompt1 = self.repair(image, imask, bmask1, bmask2)
         bmask2_fixed, image2_paint, prompt2 = self.repair(image, imask, bmask2, bmask1)
@@ -164,11 +162,11 @@ class OcclusionResolver:
         bmask1_ratio = np.sum(bmask1_delta) / np.sum(bmask2)
         bmask2_ratio = np.sum(bmask2_delta) / np.sum(bmask1)
 
-        if self.visualizations_path is not None:
-            visualize_bmask(bmask1_fixed).save(f'{self.visualizations_path}/{label1}_{label2}_bmask1_fixed.png')
-            visualize_bmask(bmask2_fixed).save(f'{self.visualizations_path}/{label1}_{label2}_bmask2_fixed.png')
-            plot_points(visualize_image(image1_paint), prompt1['point_coords']).save(f'{self.visualizations_path}/{label1}_{label2}_image1_paint.png')
-            plot_points(visualize_image(image2_paint), prompt2['point_coords']).save(f'{self.visualizations_path}/{label1}_{label2}_image2_paint.png')
+        if visualizations is not None:
+            visualize_bmask(bmask1_fixed).save(f'{visualizations}/{label1}_{label2}_bmask1_fixed.png')
+            visualize_bmask(bmask2_fixed).save(f'{visualizations}/{label1}_{label2}_bmask2_fixed.png')
+            plot_points(visualize_image(image1_paint), prompt1['point_coords']).save(f'{visualizations}/{label1}_{label2}_image1_paint.png')
+            plot_points(visualize_image(image2_paint), prompt2['point_coords']).save(f'{visualizations}/{label1}_{label2}_image2_paint.png')
 
         return {
             'bmask1_delta': resize_bmask(bmask1_delta, (W, H)),

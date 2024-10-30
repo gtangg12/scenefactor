@@ -1,4 +1,5 @@
-import numpy as np
+import os
+from pathlib import Path
 
 from scenefactor.data.common import NumpyTensor
 from scenefactor.data.sequence import FrameSequence

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 import torch.nn.functional as F
 from omegaconf import OmegaConf
@@ -21,9 +23,9 @@ class SequenceInpainter:
         self.config = config
         self.model_inpainter = ModelLama(config.model_inpainter)
         self.model_segmenter = ModelSamGrounded(config.model_segmenter)
-        self.visualizations_path = f'{self.config.cache}/visualizations' if 'cache' in self.config else None
+        self.visualizations_path = None
 
-    def process_sequence_no_refine(self, sequence: FrameSequence, labels_to_inpaint: set[int], inpaint_radius_ratio=1.5) -> FrameSequence:
+    def process_sequence_no_refine(self, sequence: FrameSequence, labels_to_inpaint: set[int], visualizations: Path | str = None) -> FrameSequence:
         """
         """
         sequence_updated = sequence.clone()
@@ -86,7 +88,7 @@ class SequenceInpainter:
             bmask = np.zeros_like(imask)
             for label in labels_to_inpaint:
                 bmask_label = imask == label
-                bmask_label = dialate_bmask(bmask_label, compute_inpaint_radius(bmask_label, imask, ratio=inpaint_radius_ratio))
+                bmask_label = dialate_bmask(bmask_label, compute_inpaint_radius(bmask_label, imask, ratio=1.5))
                 bmask |= bmask_label
             if not np.any(bmask):
                 return
@@ -128,45 +130,43 @@ class SequenceInpainter:
             sequence_updated.images[index] = image_paint
             sequence_updated.imasks[index] = imask_paint
             
-            if self.visualizations_path is not None:
-                visualize_image (image)      .save(f'{self.visualizations_path}/index_{index}_image.png')
-                visualize_image (image_paint).save(f'{self.visualizations_path}/index_{index}_image_paint.png')
-                visualize_cmask (imask_paint).save(f'{self.visualizations_path}/index_{index}_imask_paint.png')
-                visualize_bmask (bmask_input).save(f'{self.visualizations_path}/index_{index}_bmask_input.png')
-                visualize_bmasks(bmask_model).save(f'{self.visualizations_path}/index_{index}_bmask_model.png')
+            if visualizations is not None:
+                visualize_image (image)      .save(f'{visualizations}/index_{index}_image.png')
+                visualize_image (image_paint).save(f'{visualizations}/index_{index}_image_paint.png')
+                visualize_cmask (imask_paint).save(f'{visualizations}/index_{index}_imask_paint.png')
+                visualize_bmask (bmask_input).save(f'{visualizations}/index_{index}_bmask_input.png')
+                visualize_bmasks(bmask_model).save(f'{visualizations}/index_{index}_bmask_model.png')
 
         for i in tqdm(range(len(sequence))):
             inpaint(i)
         return sequence_updated
     
-    def process_sequence_gaussian_splatting_refine(self, sequence: FrameSequence, labels_to_inpaint: set[int], feedback=False) -> FrameSequence:
+    def process_sequence_gsplat_refine(self, sequence: FrameSequence, labels_to_inpaint: set[int], visualizations: Path | str = None) -> FrameSequence:
         """
         TODO feedback
         """
-        image_metadata = { # feedback metadata
-            index: {'inpaint_radius_ratio': 1.5, 'delta': None} for index in range(len(sequence))
-        }
-        for i in range(self.config.get('gaussian_splatting_refine_max_iterations', 1)):
-            sequence = self.process_sequence(sequence, labels_to_inpaint)     
+        for i in range(self.config.refine_iterations):
+            sequence = self.process_sequence_no_refine(sequence, labels_to_inpaint, visualizations=visualizations)
+            name = sequence.metadata['sequence_name'] + f'_iteration_{i}'
             renderer = RendererImplicit(
                 sequence,
-                sequence_path=self.config.gaussian_splatting_sequence_path / sequence.metadata['name'] / f'iteration_{i}',
-                sequence_name=sequence.metadata['name'] + f'_iteration_{i}'
+                sequence_name=name,
+                sequence_path=Path(visualizations).parent / name,
             )
             renderer.train()
             renderer_images = renderer.render(sequence.poses)['RGB']
             sequence.images = renderer_images
-            if self.visualizations_path is not None:
+            if visualizations is not None:
                 for index, image in enumerate(renderer_images):
-                    visualize_image(image).save(f'{self.visualizations_path}/index_{index}_image_refined.png')
+                    visualize_image(image).save(f'{visualizations}/index_{index}_image_refined.png')
         return sequence
 
-    def process_sequence(self, sequence: FrameSequence, labels_to_inpaint: set[int], refine='none') -> FrameSequence:
+    def process_sequence(self, sequence: FrameSequence, labels_to_inpaint: set[int], visualizations: Path | str = None) -> FrameSequence:
         """
         """
+        assert self.config.refine in ['none', 'gsplat'], f'Invalid refine method {self.config.refine}'
         methods = {
-            'none'                       : lambda *args: self.process_sequence_no_refine(*args),
-            'gaussian_splatting'         : lambda *args: self.process_sequence_gaussian_splatting_refine(*args),
-            'gaussian_splatting_feedback': lambda *args: self.process_sequence_gaussian_splatting_refine(*args, feedback=True)
+            'none'  : self.process_sequence_no_refine,
+            'gsplat': self.process_sequence_gsplat_refine,
         }
-        return methods[refine](sequence, labels_to_inpaint)
+        return methods[self.config.refine](sequence, labels_to_inpaint, visualizations=visualizations)

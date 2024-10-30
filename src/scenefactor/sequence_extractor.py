@@ -1,4 +1,6 @@
 from collections import defaultdict
+from pathlib import Path
+
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
@@ -7,6 +9,7 @@ from scenefactor.data.sequence import FrameSequence
 from scenefactor.utils.geom import *
 from scenefactor.utils.visualize import *
 from scenefactor.sequence_extractor_ranking_losses import *
+from scenefactor.factorization_common import *
 
 
 class SequenceExtractor:
@@ -19,9 +22,8 @@ class SequenceExtractor:
         loss_config = config.get('loss', {})
         self.module_loss_occ = OccupancyRankingLoss(loss_config.get('loss_occ', {}))
         self.module_loss_vlm = VLMRankingLoss      (loss_config.get('loss_vlm', {}))
-        self.visualizations_path = f'{self.config.cache}/visualizations' if 'cache' in self.config else None
 
-    def process_sequence(self, sequence: FrameSequence, frames: list[dict]) -> dict[int, NumpyTensor['h', 'w', 3]]:
+    def process_sequence(self, sequence: FrameSequence, frames: list[dict], visualizations: Path | str = None) -> dict[int, NumpyTensor['h', 'w', 3]]:
         """
         """
         # Aggregate views for each label
@@ -30,19 +32,19 @@ class SequenceExtractor:
             for label, info in labels.items():
                 if info['valid'] and info['occlusion_cost'] < self.config.occlusion_threshold_cost:
                     views[label].append(self.process(image, imask, label, info))
-        if self.visualizations_path is not None:
+        if visualizations:
             for label, view in views.items():
                 for info in view:
                     index = info['index']
-                    visualize_image(info['view']).save(f'{self.visualizations_path}/label_{label}_index_{index}.png')
+                    visualize_image(info['view']).save(f'{visualizations}/label_{label}_index_{index}.png')
 
         # Rank and extract the best view for each label
         outputs = {}
         for label, info in tqdm(views.items(), desc='Ranking views'):
             outputs[label] = self.select_view(info)
-        if self.visualizations_path is not None:
+        if visualizations:
             for label, image in outputs.items():
-                visualize_image(image).save(f'{self.visualizations_path}/label_{label}_final.png')
+                visualize_image(image).save(f'{visualizations}/label_{label}_final.png')
         return outputs
     
     def process(
