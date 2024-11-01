@@ -5,7 +5,7 @@ occlusion:
     min_area: 2048
   inpainter:
     checkpoint: /home/gtangg12/scenefactor/checkpoints/big-lama
-  inpainter_dialation: 5
+  inpainter_dialation: 10
   inpainter_iterations: 1
   segmenter_num_samples: 32
   segmenter_sample_grid: 2
@@ -14,7 +14,7 @@ occlusion:
   occlusion_threshold_ratio: 0.025
 
 extractor:
-  occlusion_threshold_cost: 0.25
+  occlusion_threshold_cost: 0.1
   loss:
     loss_vlm:
       model: gpt-4o
@@ -40,6 +40,8 @@ inpainter:
       engine_config: {}
     include_sam_auto: True
     min_area: 256
+  refine: none
+  refine_iterations: 1
 
 generator:
     model_config: configs/instant-mesh-large.yaml
@@ -47,3 +49,9 @@ generator:
     tmesh_path: outputs/instant-mesh-large/meshes/input.obj
 
 max_iterations: 5
+extractor_step: 2
+visualize_occlusion: True
+visualize_inpainter: True
+visualize_extractor: True
+visualize_generator: True
+cache: none # set during runtime

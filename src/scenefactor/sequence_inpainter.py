@@ -147,11 +147,11 @@ class SequenceInpainter:
         """
         for i in range(self.config.refine_iterations):
             sequence = self.process_sequence_no_refine(sequence, labels_to_inpaint, visualizations=visualizations)
-            name = sequence.metadata['sequence_name'] + f'_iteration_{i}'
+            name = sequence.metadata['sequence_name'] + f'_refine_iteration_{i}'
             renderer = RendererImplicit(
                 sequence,
                 sequence_name=name,
-                sequence_path=Path(visualizations).parent / name,
+                sequence_path=Path(visualizations).parent.parent / 'refine' / name,
             )
             renderer.train()
             renderer_images = renderer.render(sequence.poses)['RGB']

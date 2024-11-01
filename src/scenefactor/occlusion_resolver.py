@@ -68,16 +68,16 @@ class OcclusionResolver:
 
             # obtain occulsion information for each pair of labels
             labels = defaultdict(dict)
-            invalid = set()
+            labels_background = set()
             for label in np.unique(imask):
                 if label == INSTANCE_BACKGROUND or not valid_size(label):
-                    invalid.add(label)
+                    labels_background.add(label)
                 else:
                     labels[label]['adjacent'] = {}
             
             for label1, label2 in itertools.combinations(np.unique(imask), 2):
-                if label1 in invalid or \
-                   label2 in invalid:
+                if label1 in labels_background or \
+                   label2 in labels_background:
                     continue
                 data = self.resolve(image, imask, label1, label2, visualizations=visualizations_index)
                 if data is None:
